@@ -1,0 +1,12 @@
+{{- if .Values.oidc.providers }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-oidc-reconcile
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    {{- include "firezone.labels" . | nindent 4 }}
+data:
+  oidc_reconcile.py: |
+{{ .Files.Get "files/oidc_reconcile.py" | indent 4 }}
+{{- end }}

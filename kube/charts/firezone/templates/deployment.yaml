@@ -1,0 +1,165 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name | quote }}
+  namespace: {{ .Values.namespace | quote }}
+  labels:
+    {{- include "firezone.labels" . | nindent 4 }}
+spec:
+  # Recreate: postgres lockfiles and firezone runtime state in the
+  # hostPath volume do not tolerate parallel pods, which RollingUpdate
+  # would briefly create on a replacement.
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "firezone.selector" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "firezone.labels" . | nindent 8 }}
+      annotations:
+        k8s.v1.cni.cncf.io/networks: {{ include "firezone.networks" . | quote }}
+        checksum/env-secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- if .Values.oidc.providers }}
+        checksum/oidc-secret: {{ include (print $.Template.BasePath "/oidc-secret.yaml") . | sha256sum }}
+        checksum/oidc-reconcile: {{ include (print $.Template.BasePath "/oidc-reconcile-configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- if .Values.ospf }}
+        checksum/frr-config: {{ include "frr-sidecar.configmap" (dict "name" .Values.name "namespace" .Values.namespace "ospf" .Values.ospf) | sha256sum }}
+        {{- end }}
+    spec:
+      restartPolicy: Always
+      {{- if .Values.oidc.providers }}
+      shareProcessNamespace: true
+      {{- end }}
+      # Match the existing docker-compose stack's sysctls. All three are
+      # flagged "unsafe" by upstream kubelet and must be allow-listed at
+      # k3s install time via
+      # `--kubelet-arg=allowed-unsafe-sysctls=net.ipv4.ip_forward,...`.
+      # See examples/mini-site/infra/yc.tf module "k3s_init_hub" for the
+      # operator-side wiring.
+      securityContext:
+        sysctls:
+          - name: net.ipv4.ip_forward
+            value: "1"
+          - name: net.ipv4.conf.all.src_valid_mark
+            value: "1"
+          - name: net.ipv4.conf.all.rp_filter
+            value: "2"
+      volumes:
+        # Persistent runtime state for both the Phoenix application and
+        # postgres. Backed by the YC data disk re-attached after VM
+        # replacement.
+        - name: firezone-data
+          hostPath:
+            path: {{ printf "%s/firezone-data" .Values.firezoneDir | quote }}
+            type: DirectoryOrCreate
+        - name: postgres-data
+          hostPath:
+            path: {{ printf "%s/postgres-data" .Values.firezoneDir | quote }}
+            type: DirectoryOrCreate
+        {{- if .Values.oidc.providers }}
+        - name: oidc-reconcile-script
+          configMap:
+            name: {{ .Values.name }}-oidc-reconcile
+        {{- end }}
+        {{- $frrVol := include "frr-sidecar.volume" (dict
+              "name" .Values.name
+              "ospf" .Values.ospf
+            ) -}}
+        {{- if $frrVol }}{{ $frrVol | nindent 8 }}{{- end }}
+      {{- $initFrr := include "frr-sidecar.initContainer" (dict
+            "image" .Values.images.frr
+            "ospf"  .Values.ospf
+          ) -}}
+      {{- if $initFrr }}
+      initContainers:
+        {{- $initFrr | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: firezone
+          image: {{ .Values.images.firezone | quote }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: {{ .Values.name }}-env
+          ports:
+            # Internal admin/Phoenix port. Backed by the ClusterIP
+            # Service consumed by the Traefik IngressRoute.
+            - name: admin-ui
+              containerPort: 13000
+              protocol: TCP
+            # External WireGuard server endpoint. Exposed on the node
+            # via hostPort so clients can reach it on the public IP of
+            # the hub VM. Single-pod stack (Recreate strategy) means
+            # there is no hostPort scheduling conflict.
+            - name: wg
+              containerPort: {{ int .Values.wgListenPort }}
+              hostPort: {{ int .Values.wgListenPort }}
+              protocol: UDP
+          volumeMounts:
+            - name: firezone-data
+              mountPath: /var/firezone
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "SYS_MODULE"]
+        - name: postgres
+          image: {{ .Values.images.postgres | quote }}
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: {{ .Values.name }}-env
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - /usr/bin/pg_isready
+                - -U
+                - postgres
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        {{- $frr := include "frr-sidecar.container" (dict
+              "image" .Values.images.frr
+              "ospf" .Values.ospf
+              "transit" .Values.transit
+            ) -}}
+        {{- if $frr }}{{ $frr | nindent 8 }}{{- end }}
+        {{- if .Values.oidc.providers }}
+        - name: oidc-reconcile
+          image: {{ .Values.images.oidcReconcile | quote }}
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "/opt/oidc-reconcile/oidc_reconcile.py"]
+          env:
+            - name: OIDC_MANAGED
+              value: {{ .Values.oidc.managed | quote }}
+            - name: FZ_API_URL
+              value: "http://127.0.0.1:13000"
+            - name: FZ_RELEASE_DIR
+              value: "/app"
+          # firezone-env is REQUIRED, not over-broad: the nsenter-launched
+          # bin/create-api-token (eval mode) inherits this env and needs
+          # DATABASE_*/secrets to spawn a BEAM that reaches Postgres.
+          envFrom:
+            - secretRef:
+                name: {{ .Values.name }}-env
+            - secretRef:
+                name: {{ .Values.name }}-oidc
+          securityContext:
+            runAsUser: 0
+            capabilities:
+              # Phase 0 spike confirmed: SYS_ADMIN(setns ns), SYS_PTRACE(open
+              # /proc/<pid>/ns/*), NET_ADMIN(overlay bootstrap `ip`).
+              add: ["SYS_PTRACE", "SYS_ADMIN", "NET_ADMIN"]
+          readinessProbe:
+            exec:
+              command: ["test", "-f", "/tmp/oidc-reconcile-ok"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: oidc-reconcile-script
+              mountPath: /opt/oidc-reconcile
+        {{- end }}

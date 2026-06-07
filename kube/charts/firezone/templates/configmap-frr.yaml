@@ -1,0 +1,6 @@
+{{- $cm := include "frr-sidecar.configmap" (dict
+      "name" .Values.name
+      "namespace" .Values.namespace
+      "ospf" .Values.ospf
+    ) -}}
+{{- if $cm }}{{ $cm }}{{- end }}

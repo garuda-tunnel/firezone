@@ -1,0 +1,10 @@
+apiVersion: v2
+name: firezone
+description: "Garuda Firezone stack (server + postgres + optional FRR sidecar) with Traefik IngressRoute and cert-manager Certificate."
+type: application
+version: 0.2.0
+appVersion: "0.1.0"
+dependencies:
+  - name: frr-sidecar
+    version: "0.1.0"
+    repository: "oci://ghcr.io/garuda-tunnel/charts"

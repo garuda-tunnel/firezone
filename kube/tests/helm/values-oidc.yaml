@@ -1,0 +1,39 @@
+namespace: garuda
+name: firezone
+firezoneDir: /opt/garuda/firezone
+serverFqdn: hub.example.net
+clientSubnet: 198.51.100.128/25
+wireguardIpv4Address: 198.51.100.129
+wireguardIpv4Masquerade: false
+wireguardIpv6Masquerade: false
+wgListenPort: 51620
+gatewayRef:
+  name: platform-gateway
+  namespace: gateway-system
+nicAttach:
+  - backbone
+  - border
+labels: {}
+images:
+  firezone: ghcr.io/garuda-tunnel/garuda-firezone:latest
+  postgres: postgres:15
+  frr: ""
+  oidcReconcile: python:3.12-slim-bookworm
+adminEmail: admin@example.net
+adminPassword: fixture-password
+secrets:
+  guardianSecretKey: fixture-guardian
+  secretKeyBase: fixture-secret-key-base
+  liveViewSigningSalt: fixture-live-view
+  cookieSigningSalt: fixture-sign
+  cookieEncryptionSalt: fixture-encrypt
+  databaseEncryptionKey: fixture-database-encryption
+  databasePassword: fixture-database-password
+ospf: null
+oidc:
+  managed: merge
+  providers:
+    google:
+      client_id: fixture-client-id
+      client_secret: fixture-client-secret
+      label: Google

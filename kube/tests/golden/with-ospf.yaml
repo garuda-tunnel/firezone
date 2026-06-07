@@ -1,0 +1,236 @@
+---
+# Source: firezone/templates/secret.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: firezone-env
+  namespace: "garuda"
+  labels:
+    app.kubernetes.io/name: firezone
+    app.kubernetes.io/instance: "firezone"
+    app.kubernetes.io/managed-by: Helm
+    garuda.managed-by: helm
+type: Opaque
+stringData:
+  # Firezone Phoenix application env. This Secret is the source of truth for the firezone
+  # container's environment (rendered directly from Helm values).
+  EXTERNAL_URL: "https://hub.example.net"
+  DEFAULT_ADMIN_EMAIL: "admin@example.net"
+  DEFAULT_ADMIN_PASSWORD: "fixture-password"
+  WIREGUARD_IPV4_NETWORK: "198.51.100.128/25"
+  WIREGUARD_IPV4_ADDRESS: "198.51.100.129"
+  FZ_PORT: "13000"
+  WIREGUARD_PORT: "51620"
+  PHOENIX_SECURE_COOKIES: "true"
+  TELEMETRY_ENABLED: "false"
+  WIREGUARD_IPV4_MASQUERADE: "false"
+  WIREGUARD_IPV6_MASQUERADE: "false"
+  GUARDIAN_SECRET_KEY: "fixture-guardian"
+  SECRET_KEY_BASE: "fixture-secret-key-base"
+  LIVE_VIEW_SIGNING_SALT: "fixture-live-view"
+  COOKIE_SIGNING_SALT: "fixture-sign"
+  COOKIE_ENCRYPTION_SALT: "fixture-encrypt"
+  DATABASE_ENCRYPTION_KEY: "fixture-database-encryption"
+  # Postgres connection. The chart provisions a single postgres container
+  # in the same pod, reachable on 127.0.0.1 since both containers share
+  # the pod's network namespace.
+  DATABASE_HOST: "127.0.0.1"
+  DATABASE_NAME: "firezone"
+  DATABASE_USER: "postgres"
+  DATABASE_PASSWORD: "fixture-database-password"
+  POSTGRES_DB: "firezone"
+  POSTGRES_USER: "postgres"
+  POSTGRES_PASSWORD: "fixture-database-password"
+
+---
+# Source: firezone/templates/configmap-frr.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "firezone-frr"
+  namespace: "garuda"
+data:
+  frr.conf: |
+    frr defaults traditional
+    log file /tmp/frr.log
+    zebra nexthop proto only
+    interface wg-firezone
+     ip ospf area 0.0.0.0
+    ip ospf hello-interval 5
+     ip ospf dead-interval 15
+     ip ospf mtu-ignore
+    router ospf
+     ospf router-id 198.51.100.22
+    redistribute connected
+    
+  daemons: |
+    zebra=yes
+    ospfd=yes
+  vtysh.conf: |
+    service integrated-vtysh-config
+
+---
+# Source: firezone/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: firezone
+  namespace: "garuda"
+  labels:
+    app.kubernetes.io/name: firezone
+    app.kubernetes.io/instance: "firezone"
+    app.kubernetes.io/managed-by: Helm
+    garuda.managed-by: helm
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: firezone
+    app.kubernetes.io/instance: "firezone"
+  ports:
+    - name: admin-ui
+      port: 13000
+      targetPort: 13000
+      protocol: TCP
+
+---
+# Source: firezone/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "firezone"
+  namespace: "garuda"
+  labels:
+    app.kubernetes.io/name: firezone
+    app.kubernetes.io/instance: "firezone"
+    app.kubernetes.io/managed-by: Helm
+    garuda.managed-by: helm
+spec:
+  # Recreate: postgres lockfiles and firezone runtime state in the
+  # hostPath volume do not tolerate parallel pods, which RollingUpdate
+  # would briefly create on a replacement.
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: firezone
+      app.kubernetes.io/instance: "firezone"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: firezone
+        app.kubernetes.io/instance: "firezone"
+        app.kubernetes.io/managed-by: Helm
+        garuda.managed-by: helm
+      annotations:
+        k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
+        checksum/env-secret: 7a96f649fa8f34e6a882d3e79d8b7926e40ec33ebbc06d4b3116b99a7fdf2044
+        checksum/frr-config: ba1c797f3061c9ac871af2d178c400dfe7f13315752156fe7fd197b71a86c0b0
+    spec:
+      restartPolicy: Always
+      # Match the existing docker-compose stack's sysctls. All three are
+      # flagged "unsafe" by upstream kubelet and must be allow-listed at
+      # k3s install time via
+      # `--kubelet-arg=allowed-unsafe-sysctls=net.ipv4.ip_forward,...`.
+      # See examples/mini-site/infra/yc.tf module "k3s_init_hub" for the
+      # operator-side wiring.
+      securityContext:
+        sysctls:
+          - name: net.ipv4.ip_forward
+            value: "1"
+          - name: net.ipv4.conf.all.src_valid_mark
+            value: "1"
+          - name: net.ipv4.conf.all.rp_filter
+            value: "2"
+      volumes:
+        # Persistent runtime state for both the Phoenix application and
+        # postgres. Backed by the YC data disk re-attached after VM
+        # replacement.
+        - name: firezone-data
+          hostPath:
+            path: "/opt/garuda/firezone/firezone-data"
+            type: DirectoryOrCreate
+        - name: postgres-data
+          hostPath:
+            path: "/opt/garuda/firezone/postgres-data"
+            type: DirectoryOrCreate
+        - name: frr-source
+          configMap:
+            name: firezone-frr
+      containers:
+        - name: firezone
+          image: "ghcr.io/garuda-tunnel/garuda-firezone:latest"
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: firezone-env
+          ports:
+            # Internal admin/Phoenix port. Backed by the ClusterIP
+            # Service consumed by the Traefik IngressRoute.
+            - name: admin-ui
+              containerPort: 13000
+              protocol: TCP
+            # External WireGuard server endpoint. Exposed on the node
+            # via hostPort so clients can reach it on the public IP of
+            # the hub VM. Single-pod stack (Recreate strategy) means
+            # there is no hostPort scheduling conflict.
+            - name: wg
+              containerPort: 51620
+              hostPort: 51620
+              protocol: UDP
+          volumeMounts:
+            - name: firezone-data
+              mountPath: /var/firezone
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "SYS_MODULE"]
+        - name: postgres
+          image: "postgres:15"
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - secretRef:
+                name: firezone-env
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          readinessProbe:
+            exec:
+              command:
+                - /usr/bin/pg_isready
+                - -U
+                - postgres
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - name: frr-sidecar
+          image: "ghcr.io/garuda-tunnel/garuda-frr-sidecar:latest"
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: frr-source
+              mountPath: /etc/frr-source
+              readOnly: true
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW", "SYS_ADMIN"]
+
+---
+# Source: firezone/templates/httproute.yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: "firezone"
+  namespace: "garuda"
+  labels:
+    app.kubernetes.io/name: firezone
+    app.kubernetes.io/instance: "firezone"
+    app.kubernetes.io/managed-by: Helm
+    garuda.managed-by: helm
+spec:
+  parentRefs:
+    - name: "platform-gateway"
+      namespace: "gateway-system"
+  hostnames:
+    - "hub.example.net"
+  rules:
+    - backendRefs:
+        - name: "firezone"
+          port: 13000

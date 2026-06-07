@@ -1,0 +1,65 @@
+namespace: garuda
+name: firezone
+firezoneDir: /opt/garuda/firezone
+# Required: consumer module supplies via var.server_fqdn. Empty default
+# combined with values.schema.json minLength: 1 fails `helm install`
+# fast when a deployment forgets to override.
+serverFqdn: ""
+# Required: consumer module supplies via var.client_subnet. Empty
+# default fails fast (see schema minLength: 1).
+clientSubnet: ""
+# Required: derived from clientSubnet by the consumer module
+# (cidrhost(var.client_subnet, 1)). Empty default fails fast.
+wireguardIpv4Address: ""
+wireguardIpv4Masquerade: false
+wireguardIpv6Masquerade: false
+wgListenPort: 51620
+# Firezone telemetry phone-home (TELEMETRY_ENABLED, upstream default true).
+# Disabled by default: a private VPN topology must not call out to
+# ping.firez.one. Leaving it on produces a harmless but noisy
+# `:nxdomain url=https://ping.firez.one` connectivity-check error in the
+# firezone container logs because that endpoint has no public A/AAAA record.
+telemetryEnabled: false
+# Required: consumer module supplies via var.gateway_ref. Both empty
+# strings combined with the schema's minLength fail fast.
+gatewayRef:
+  name: ""
+  namespace: ""
+nicAttach:
+  - backbone
+  - border
+labels: {}
+images:
+  firezone: ""
+  postgres: postgres:15
+  frr: ""
+  oidcReconcile: ""
+# Required: consumer module supplies via var.admin_email. Empty default
+# fails fast.
+adminEmail: ""
+# Required: consumer module supplies via var.admin_password. Empty
+# default fails fast.
+adminPassword: ""
+secrets:
+  guardianSecretKey: "placeholder_guardian"
+  secretKeyBase: "placeholder_secret"
+  liveViewSigningSalt: "placeholder_liveview"
+  cookieSigningSalt: "placeholder_cookiesigning"
+  cookieEncryptionSalt: "placeholder_cookieencryption"
+  databaseEncryptionKey: "placeholder_dbencryption"
+  databasePassword: "placeholder_dbpassword"
+# ospf is null when omitted; FRR sidecar is then NOT rendered.
+ospf: null
+# transit.interfaces is the CSV ingress list for transit_watcher running
+# inside the FRR sidecar. When non-empty, the deployment exports
+# PBR_TRANSIT_TAG=201 (matches frr_injector/config.py:TRANSIT_TAG) and
+# PBR_TRANSIT_INTERFACES — the sidecar entrypoint then launches
+# transit_watcher.py automatically.
+transit:
+  interfaces: []
+# OIDC reconcile. When oidc.providers is empty, no sidecar / Secret /
+# shareProcessNamespace is rendered (OIDC off). When non-empty, the
+# oidc-reconcile sidecar reconciles providers onto the running instance.
+oidc:
+  managed: merge
+  providers: {}

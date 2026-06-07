@@ -1,0 +1,25 @@
+{{- define "firezone.labels" -}}
+app.kubernetes.io/name: firezone
+app.kubernetes.io/instance: {{ .Values.name | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+garuda.managed-by: helm
+{{- range $k, $v := .Values.labels }}
+{{ $k }}: {{ $v | quote }}
+{{- end }}
+{{- end -}}
+
+{{- define "firezone.selector" -}}
+app.kubernetes.io/name: firezone
+app.kubernetes.io/instance: {{ .Values.name | quote }}
+{{- end -}}
+
+{{/* Comma-separated Multus annotation: name@iface, name@iface. */}}
+{{- define "firezone.networks" -}}
+{{- $items := list -}}
+{{- range .Values.nicAttach -}}
+{{- $items = append $items (printf "%s@%s" . .) -}}
+{{- end -}}
+{{- join "," $items -}}
+{{- end -}}
+
+

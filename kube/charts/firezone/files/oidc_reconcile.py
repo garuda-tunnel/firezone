@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+"""In-pod Firezone OIDC reconcile.
+
+Runs as the `oidc-reconcile` sidecar in the firezone pod. Enters the
+firezone container's namespaces via nsenter to mint/delete a short-lived
+API token using the release's own bin/* tooling, reconciles OIDC
+providers over /v0/configuration, then idles (signal.pause) so the
+Deployment does not restart-loop it. Re-runs on every pod recreation.
+
+Spike-confirmed (docs/artifacts/2026-06-02-firezone-oidc-spike.md):
+nsenter --mount --net; create-api-token uses eval (DB env inherited from
+the sidecar's envFrom -env, RELEASE_COOKIE from /app/releases/COOKIE);
+GET /v0/configuration returns client_secret verbatim; PID via /proc scan
+for beam.smp.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import logging
+import os
+import re
+import signal
+import subprocess
+import time
+import urllib.error
+import urllib.request
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("oidc-reconcile")
+
+API_URL = os.environ.get("FZ_API_URL", "http://127.0.0.1:13000")
+RELEASE_DIR = os.environ.get("FZ_RELEASE_DIR", "/app")
+MANAGED = os.environ.get("OIDC_MANAGED", "merge")
+SERVER_URL = os.environ.get("EXTERNAL_URL", "")  # from -env secret
+READY_TIMEOUT = int(os.environ.get("FZ_READY_TIMEOUT", "300"))
+OK_FILE = "/tmp/oidc-reconcile-ok"
+
+# Phase 0 spike: --mount (reach /app + releases/COOKIE) and --net (overlay
+# bootstrap `ip` + rpc Erlang distribution/epmd).
+NSENTER_NS_FLAGS = ["--mount", "--net"]
+_DISCOVERY_DEFAULT = "https://accounts.google.com/.well-known/openid-configuration"
+_JWT_RE = re.compile(r"[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+
+
+def extract_jwt(stdout: str) -> str:
+    """Return the JWT token from possibly-noisy command stdout."""
+    for line in stdout.splitlines():
+        line = line.strip()
+        if _JWT_RE.fullmatch(line):
+            return line
+    raise ValueError("no JWT found in stdout")
+
+
+def decode_token_id(jwt: str) -> str:
+    """Decode the JWT payload and return the token id (`api` claim)."""
+    payload_b64 = jwt.split(".")[1]
+    payload_b64 += "=" * ((4 - len(payload_b64) % 4) % 4)
+    payload = json.loads(base64.urlsafe_b64decode(payload_b64))
+    return payload["api"]
+
+
+def build_desired(providers: dict, server_url: str) -> list[dict]:
+    """Project the OIDC_PROVIDERS_JSON map into Firezone provider objects."""
+    out: list[dict] = []
+    for key, cfg in providers.items():
+        out.append(
+            {
+                "id": key,
+                "label": cfg.get("label") or key,
+                "discovery_document_uri": cfg.get("discovery_document_uri")
+                or _DISCOVERY_DEFAULT,
+                "client_id": cfg["client_id"],
+                "client_secret": cfg["client_secret"],
+                "redirect_uri": cfg.get("redirect_uri")
+                or f"{server_url}/auth/oidc/{key}/callback",
+                "response_type": cfg.get("response_type") or "code",
+                "scope": cfg.get("scope") or "openid email profile",
+                "auto_create_users": (
+                    cfg["auto_create_users"]
+                    if cfg.get("auto_create_users") is not None
+                    else True
+                ),
+            }
+        )
+    return out
+
+
+def merge_providers(existing: list[dict], desired: list[dict], mode: str) -> list[dict]:
+    """merge: upsert desired by id, keep others. replace: desired only."""
+    if mode == "replace":
+        return list(desired)
+    by_id = {p["id"]: p for p in existing}
+    for p in desired:
+        by_id[p["id"]] = p
+    return list(by_id.values())
+
+
+def _read_pid() -> int:
+    """Resolve the firezone main (beam.smp) PID via /proc.
+
+    shareProcessNamespace makes the sibling firezone process visible. We do
+    NOT rely on a PID file (that postStart approach blocked pod readiness).
+    reconcile() calls this only after wait_for_api() confirms beam is
+    serving, so the process is present. Spike: comm == "beam.smp", cwd /app.
+    """
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/comm", encoding="ascii") as fh:
+                comm = fh.read().strip()
+            cwd = os.readlink(f"/proc/{entry}/cwd")
+        except OSError:
+            continue
+        if comm == "beam.smp" and cwd.startswith(RELEASE_DIR):
+            return int(entry)
+    raise RuntimeError("could not resolve firezone beam.smp PID")
+
+
+def _nsenter(pid: int, shell_cmd: str) -> str:
+    """Run a release bin command inside the firezone container namespaces."""
+    cmd = [
+        "nsenter",
+        "-t",
+        str(pid),
+        *NSENTER_NS_FLAGS,
+        "--",
+        "/bin/sh",
+        "-lc",
+        f"cd {RELEASE_DIR} && {shell_cmd}",
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True, check=False)
+    if res.returncode != 0:
+        log.error(
+            "nsenter cmd failed (rc=%d): %s\nstderr: %s",
+            res.returncode,
+            shell_cmd,
+            res.stderr.strip(),
+        )
+        raise subprocess.CalledProcessError(res.returncode, cmd, res.stdout, res.stderr)
+    return res.stdout
+
+
+def _http(method: str, path: str, token: str, body: dict | None = None) -> dict:
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f"{API_URL}{path}", data=data, method=method)
+    req.add_header("Authorization", f"Bearer {token}")
+    req.add_header("Content-Type", "application/json")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        raw = resp.read().decode()
+    return json.loads(raw) if raw else {}
+
+
+def wait_for_api() -> None:
+    """Block until the firezone API responds (200 or 401), bounded."""
+    deadline = time.time() + READY_TIMEOUT
+    while time.time() < deadline:
+        try:
+            urllib.request.urlopen(f"{API_URL}/v0/configuration", timeout=5)
+            return
+        except urllib.error.HTTPError as exc:
+            if exc.code in (200, 401):
+                return
+        except OSError:
+            pass
+        time.sleep(3)
+    raise TimeoutError("firezone API not ready")
+
+
+def reconcile() -> None:
+    """Mint a token, reconcile providers, delete the token."""
+    providers = json.loads(os.environ["OIDC_PROVIDERS_JSON"])
+    if not providers:
+        log.info("no providers configured; nothing to do")
+        return
+    if MANAGED not in ("merge", "replace"):
+        raise ValueError(f"OIDC_MANAGED must be 'merge' or 'replace', got {MANAGED!r}")
+    wait_for_api()
+    pid = _read_pid()
+    _nsenter(pid, "bin/create-or-reset-admin")
+    token_id = None
+    try:
+        jwt = extract_jwt(_nsenter(pid, "bin/create-api-token"))
+        token_id = decode_token_id(jwt)
+        current = _http("GET", "/v0/configuration", jwt)
+        existing = (current.get("data") or {}).get("openid_connect_providers") or []
+        desired = build_desired(providers, SERVER_URL)
+        merged = merge_providers(existing, desired, MANAGED)
+        _http(
+            "PATCH",
+            "/v0/configuration",
+            jwt,
+            {"configuration": {"openid_connect_providers": merged}},
+        )
+        log.info("OIDC reconcile applied (%d providers, mode=%s)", len(merged), MANAGED)
+    finally:
+        if token_id:
+            try:
+                rpc = (
+                    "bin/firezone rpc 'with {:ok, t} <- "
+                    f'FzHttp.ApiTokens.fetch_unexpired_api_token_by_id("{token_id}"), '
+                    "do: FzHttp.Repo.delete!(t)'"
+                )
+                _nsenter(pid, rpc)
+                log.info("minted token deleted")
+            except subprocess.CalledProcessError:
+                log.warning("token cleanup failed; bounded by 30-day TTL")
+
+
+def _on_sigterm(_signum, _frame) -> None:
+    """Raise KeyboardInterrupt to interrupt signal.pause()/blocking I/O so
+    reconcile()'s finally (token cleanup) runs on pod shutdown."""
+    raise KeyboardInterrupt
+
+
+def main() -> None:
+    """Reconcile once, then idle so the Deployment does not restart-loop."""
+    signal.signal(signal.SIGTERM, _on_sigterm)
+    reconcile()  # a SIGTERM during reconcile() triggers its own finally
+    with open(OK_FILE, "w", encoding="ascii"):
+        pass
+    log.info("reconcile complete; idling")
+    try:
+        signal.pause()
+    except KeyboardInterrupt:
+        log.info("received SIGTERM; exiting")
+
+
+if __name__ == "__main__":
+    main()

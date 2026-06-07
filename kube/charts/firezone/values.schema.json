@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "namespace",
+    "name",
+    "firezoneDir",
+    "serverFqdn",
+    "clientSubnet",
+    "wireguardIpv4Address",
+    "wireguardIpv4Masquerade",
+    "wireguardIpv6Masquerade",
+    "wgListenPort",
+    "gatewayRef",
+    "nicAttach",
+    "images",
+    "adminEmail",
+    "adminPassword",
+    "secrets",
+    "oidc"
+  ],
+  "properties": {
+    "namespace":        { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+    "name":             { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+    "firezoneDir":      { "type": "string", "pattern": "^/" },
+    "serverFqdn":       { "type": "string", "minLength": 1 },
+    "clientSubnet":     { "type": "string", "minLength": 1 },
+    "wireguardIpv4Address":    { "type": "string", "minLength": 1 },
+    "wireguardIpv4Masquerade": { "type": "boolean" },
+    "wireguardIpv6Masquerade": { "type": "boolean" },
+    "wgListenPort":     { "type": "integer", "minimum": 1, "maximum": 65535 },
+    "telemetryEnabled": { "type": "boolean" },
+    "gatewayRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "namespace"],
+      "properties": {
+        "name":      { "type": "string", "minLength": 1 },
+        "namespace": { "type": "string", "minLength": 1 }
+      }
+    },
+    "nicAttach":        { "type": "array", "items": { "type": "string" } },
+    "labels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "images": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["firezone", "postgres"],
+      "properties": {
+        "firezone":      { "type": "string" },
+        "postgres":      { "type": "string" },
+        "frr":           { "type": "string" },
+        "oidcReconcile": { "type": "string" }
+      }
+    },
+    "adminEmail":    { "type": "string", "minLength": 1 },
+    "adminPassword": { "type": "string", "minLength": 1 },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "guardianSecretKey",
+        "secretKeyBase",
+        "liveViewSigningSalt",
+        "cookieSigningSalt",
+        "cookieEncryptionSalt",
+        "databaseEncryptionKey",
+        "databasePassword"
+      ],
+      "properties": {
+        "guardianSecretKey":     { "type": "string", "minLength": 1 },
+        "secretKeyBase":         { "type": "string", "minLength": 1 },
+        "liveViewSigningSalt":   { "type": "string", "minLength": 1 },
+        "cookieSigningSalt":     { "type": "string", "minLength": 1 },
+        "cookieEncryptionSalt":  { "type": "string", "minLength": 1 },
+        "databaseEncryptionKey": { "type": "string", "minLength": 1 },
+        "databasePassword":      { "type": "string", "minLength": 1 }
+      }
+    },
+    "ospf": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["router_id", "interfaces"],
+      "properties": {
+        "router_id":          { "type": "string" },
+        "interfaces":         { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+        "passive_interfaces": { "type": "array", "items": { "type": "string" } },
+        "default_originate":  { "type": "boolean" },
+        "redistribute":       { "type": "array", "items": { "enum": ["connected", "kernel", "static"] } },
+        "transit_provider":   { "type": "boolean" }
+      }
+    },
+    "transit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["interfaces"],
+      "properties": {
+        "interfaces": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "oidc": {
+      "type": "object",
+      "properties": {
+        "managed":   { "type": "string", "enum": ["merge", "replace"] },
+        "providers": { "type": "object" }
+      },
+      "required": ["managed", "providers"],
+      "additionalProperties": false
+    },
+    "frr-sidecar": {
+      "type": "object"
+    }
+  }
+}
