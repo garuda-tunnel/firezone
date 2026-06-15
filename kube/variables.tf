@@ -30,8 +30,9 @@ EOT
 }
 
 variable "firezone_image" {
-  description = "Image reference for the firezone Phoenix application container."
+  description = "Image reference for the firezone Phoenix application container. Empty ⇒ use the chart's pinned digest."
   type        = string
+  default     = ""
 }
 
 variable "postgres_image" {

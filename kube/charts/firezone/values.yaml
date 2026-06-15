@@ -30,7 +30,7 @@ nicAttach:
   - border
 labels: {}
 images:
-  firezone: ""
+  firezone: "ghcr.io/garuda-tunnel/garuda-firezone@sha256:43fbfde5591ab6113b8f4ea71d2f1b2120c9e22c06dc4bb97e86474177b9fae3"
   postgres: postgres:15
   frr: ""
   oidcReconcile: ""

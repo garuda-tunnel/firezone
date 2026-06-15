@@ -8,6 +8,18 @@ locals {
     transit_provider   = var.ospf.transit_provider
   }
 
+  # External images (postgres, oidcReconcile) are always present so the chart
+  # default can still be overridden by the module. First-party images (firezone,
+  # frr) are conditionally omitted when empty so the chart's pinned digest wins.
+  images_override = merge(
+    {
+      postgres      = var.postgres_image
+      oidcReconcile = var.oidc_reconcile_image
+    },
+    var.firezone_image == "" ? {} : { firezone = var.firezone_image },
+    var.frr_image == "" ? {} : { frr = var.frr_image },
+  )
+
   firezone_secrets = {
     guardianSecretKey     = coalesce(try(var.encryption_secrets.guardianSecretKey, null), random_bytes.guardian_secret_key.base64)
     secretKeyBase         = coalesce(try(var.encryption_secrets.secretKeyBase, null), random_bytes.secret_key_base.base64)
@@ -55,12 +67,7 @@ resource "helm_release" "firezone" {
       }
       nicAttach               = var.nic_attach
       labels                  = var.labels
-      images = {
-        firezone      = var.firezone_image
-        postgres      = var.postgres_image
-        frr           = var.frr_image
-        oidcReconcile = var.oidc_reconcile_image
-      }
+      images = local.images_override
       oidc = {
         managed   = var.oidc_managed
         providers = var.oidc_providers

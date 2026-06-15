@@ -271,3 +271,60 @@ run "reject_invalid_oidc_managed" {
   }
   expect_failures = [var.oidc_managed]
 }
+
+# Regression: when firezone_image and frr_image are both empty, first-party
+# keys must be omitted from images override so the chart's pinned digest wins.
+# External keys (postgres, oidcReconcile) must always be present.
+run "empty_firstparty_images_omit_keys" {
+  command = plan
+
+  variables {
+    firezone_image       = ""
+    frr_image            = ""
+    postgres_image       = "postgres:15"
+    oidc_reconcile_image = "python:3.12-slim-bookworm"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.firezone.values[0], "garuda-firezone@sha256:")
+    error_message = "rendered values must NOT contain a garuda-firezone digest override when firezone_image is empty"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"postgres\":")
+    error_message = "rendered values must always contain the external postgres key"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"oidcReconcile\":")
+    error_message = "rendered values must always contain the external oidcReconcile key"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.firezone.values[0], "\"frr\":")
+    error_message = "rendered values must NOT contain the frr key when frr_image is empty"
+  }
+}
+
+# Regression: when firezone_image is non-empty it must appear in the override,
+# and frr_image empty means the frr key must remain absent.
+run "nonempty_firezone_image_overrides" {
+  command = plan
+
+  variables {
+    firezone_image       = "ghcr.io/garuda-tunnel/garuda-firezone@sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    frr_image            = ""
+    postgres_image       = "postgres:15"
+    oidc_reconcile_image = "python:3.12-slim-bookworm"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "garuda-firezone@sha256:2222222222222222222222222222222222222222222222222222222222222222")
+    error_message = "rendered values must include the non-empty firezone image digest override"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.firezone.values[0], "\"frr\":")
+    error_message = "rendered values must NOT contain the frr key when frr_image is empty"
+  }
+}

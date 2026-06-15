@@ -24,7 +24,7 @@ creates inside the pod netns).
 | `namespace` | yes | Existing namespace, typically `module.garuda_k8s_hub.namespace`. |
 | `name` | no | Deployment name. Default `firezone`. |
 | `firezone_dir` | yes | Absolute host path that backs Firezone runtime state via hostPath. |
-| `firezone_image` | yes | Image reference for the firezone application container. |
+| `firezone_image` | no | Image reference for the firezone application container. Empty (default) uses the chart's pinned digest. |
 | `postgres_image` | no | Default `postgres:15`. |
 | `frr_image` | when `ospf != null` | Image for the optional frr-sidecar. |
 | `server_fqdn` | yes | External FQDN; both `EXTERNAL_URL` and IngressRoute Host match. |
