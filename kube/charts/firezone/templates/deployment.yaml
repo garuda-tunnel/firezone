@@ -80,7 +80,7 @@ spec:
       {{- end }}
       containers:
         - name: firezone
-          image: {{ .Values.images.firezone | quote }}
+          image: {{ .Values.images.firezone | default (printf "ghcr.io/garuda-tunnel/garuda-firezone:%s" .Chart.Version) | quote }}
           imagePullPolicy: IfNotPresent
           envFrom:
             - secretRef:

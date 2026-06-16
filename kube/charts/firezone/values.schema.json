@@ -48,7 +48,7 @@
     "images": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["firezone", "postgres"],
+      "required": ["postgres"],
       "properties": {
         "firezone":      { "type": "string" },
         "postgres":      { "type": "string" },
