@@ -43,11 +43,14 @@ resource "helm_release" "firezone" {
   name             = var.name
   namespace        = var.namespace
   create_namespace = false
-  chart            = "${path.module}/charts/firezone"
+  # Consume the published chart from OCI by an exact pinned version.
+  # Source stays in kube/charts/firezone for release-please / CI / local dev.
+  repository = "oci://ghcr.io/garuda-tunnel/charts"
+  chart      = "firezone"
+  version    = var.chart_version
 
-  # Resolve the frr-sidecar library chart from OCI
-  # (oci://ghcr.io/garuda-tunnel/charts, pinned in Chart.yaml) on every apply.
-  # Helm fetches it into charts/frr-sidecar-<version>.tgz (gitignored).
+  # No-op for the OCI path (dependency is vendored in the published tgz);
+  # kept so the local-path dev/hotfix escape hatch still resolves frr-sidecar.
   dependency_update = true
 
   values = [
@@ -65,17 +68,17 @@ resource "helm_release" "firezone" {
         name      = var.gateway_ref.name
         namespace = var.gateway_ref.namespace
       }
-      nicAttach               = var.nic_attach
-      labels                  = var.labels
-      images = local.images_override
+      nicAttach = var.nic_attach
+      labels    = var.labels
+      images    = local.images_override
       oidc = {
         managed   = var.oidc_managed
         providers = var.oidc_providers
       }
-      adminEmail           = var.admin_email
-      adminPassword        = var.admin_password
-      secrets              = local.firezone_secrets
-      ospf                 = local.ospf_values
+      adminEmail    = var.admin_email
+      adminPassword = var.admin_password
+      secrets       = local.firezone_secrets
+      ospf          = local.ospf_values
       transit = {
         interfaces = var.transit.interfaces
       }

@@ -257,3 +257,14 @@ variable "oidc_reconcile_image" {
   type        = string
   default     = "python:3.12-slim-bookworm"
 }
+
+variable "chart_version" {
+  description = "Pinned OCI chart version (exact semver). Bumped in lockstep with Chart.yaml by release-please."
+  type        = string
+  default     = "0.2.0" # x-release-please-version
+
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", var.chart_version))
+    error_message = "chart_version must be exact semver MAJOR.MINOR.PATCH (no range, no 'latest')."
+  }
+}
