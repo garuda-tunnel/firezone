@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/garuda-tunnel/firezone-internal/compare/v0.3.0...v0.4.0) (2026-06-16)
+
+
+### Features
+
+* **chart:** bump frr-sidecar dependency 0.1.0 -&gt; 0.2.0 ([8176064](https://github.com/garuda-tunnel/firezone-internal/commit/817606445ad6ee2dd1d81aa399cc53edbce682e0))
+* **chart:** bump frr-sidecar dependency 0.1.0 → 0.2.0 ([1b4fd92](https://github.com/garuda-tunnel/firezone-internal/commit/1b4fd925fb3571f9600a0ab731cf77014f991127))
+
 ## [0.3.0](https://github.com/garuda-tunnel/firezone-internal/compare/v0.2.0...v0.3.0) (2026-06-16)
 
 
