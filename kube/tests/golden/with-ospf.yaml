@@ -9,6 +9,7 @@ metadata:
     app.kubernetes.io/name: firezone
     app.kubernetes.io/instance: "firezone"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 type: Opaque
 stringData:
@@ -80,6 +81,7 @@ metadata:
     app.kubernetes.io/name: firezone
     app.kubernetes.io/instance: "firezone"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 spec:
   type: ClusterIP
@@ -103,6 +105,7 @@ metadata:
     app.kubernetes.io/name: firezone
     app.kubernetes.io/instance: "firezone"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 spec:
   # Recreate: postgres lockfiles and firezone runtime state in the
@@ -121,10 +124,11 @@ spec:
         app.kubernetes.io/name: firezone
         app.kubernetes.io/instance: "firezone"
         app.kubernetes.io/managed-by: Helm
+        app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
       annotations:
         k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
-        checksum/env-secret: 7a96f649fa8f34e6a882d3e79d8b7926e40ec33ebbc06d4b3116b99a7fdf2044
+        checksum/env-secret: f74094ed92c2d250b3cfbb400df85dfc86157dc3317a488f279040473ebb6470
         checksum/frr-config: ba1c797f3061c9ac871af2d178c400dfe7f13315752156fe7fd197b71a86c0b0
     spec:
       restartPolicy: Always
@@ -223,6 +227,7 @@ metadata:
     app.kubernetes.io/name: firezone
     app.kubernetes.io/instance: "firezone"
     app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 spec:
   parentRefs:

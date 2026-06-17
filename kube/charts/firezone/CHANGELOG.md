@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/garuda-tunnel/firezone-internal/compare/v0.4.0...v0.5.0) (2026-06-17)
+
+
+### Features
+
+* **firezone:** emit app.kubernetes.io/part-of=garuda pod label ([8428bab](https://github.com/garuda-tunnel/firezone-internal/commit/8428bab05ae429a6a1b9a1b5465850a9ab3bcf73))
+* **firezone:** emit app.kubernetes.io/part-of=garuda pod label ([e792198](https://github.com/garuda-tunnel/firezone-internal/commit/e792198932b61e4aa08ba6c837269a5d9a918401))
+
 ## [0.4.0](https://github.com/garuda-tunnel/firezone-internal/compare/v0.3.0...v0.4.0) (2026-06-16)
 
 
