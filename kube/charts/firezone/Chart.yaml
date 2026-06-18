@@ -3,7 +3,7 @@ name: firezone
 description: "Garuda Firezone stack (server + postgres + optional FRR sidecar)
   with Traefik IngressRoute and cert-manager Certificate."
 type: application
-version: 0.5.0
+version: 0.6.0
 appVersion: "0.1.0"
 dependencies:
   - name: frr-sidecar

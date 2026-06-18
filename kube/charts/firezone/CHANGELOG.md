@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/garuda-tunnel/firezone-internal/compare/v0.5.0...v0.6.0) (2026-06-18)
+
+
+### Features
+
+* **firezone:** add MSS clamp sidecar (bidirectional, separate nft table) ([a39554e](https://github.com/garuda-tunnel/firezone-internal/commit/a39554e4abf6374682fd6146ee13ee3cc585e91a))
+* **firezone:** MSS clamp sidecar (MTU/MSS defense-in-depth Task 3, closes GAP-1) ([6432d3e](https://github.com/garuda-tunnel/firezone-internal/commit/6432d3ee1913199a4b4552ad7cc4c205698cf077))
+
 ## [0.5.0](https://github.com/garuda-tunnel/firezone-internal/compare/v0.4.0...v0.5.0) (2026-06-17)
 
 
