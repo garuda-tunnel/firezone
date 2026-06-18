@@ -268,3 +268,20 @@ variable "chart_version" {
     error_message = "chart_version must be exact semver MAJOR.MINOR.PATCH (no range, no 'latest')."
   }
 }
+
+variable "mss_clamp_enabled" {
+  description = "Enable the MSS clamp sidecar (table inet firezone_mss). Installs a NET_ADMIN sidecar that clamps oifname wg-firezone (clamp-to-pmtu, load-bearing Chain-B return) and iifname wg-firezone (fixed MSS, defense). Set false to disable."
+  type        = bool
+  default     = true
+}
+
+variable "mss_clamp_value" {
+  description = "Fixed MSS value for the iifname wg-firezone rule (inbound-initiated defense). Default 1240 = wg-firezone MTU(1280) - 40. Must be >= QUIC 1200 floor."
+  type        = number
+  default     = 1240
+
+  validation {
+    condition     = var.mss_clamp_value >= 536 && var.mss_clamp_value <= 1460
+    error_message = "mss_clamp_value must be between 536 and 1460."
+  }
+}

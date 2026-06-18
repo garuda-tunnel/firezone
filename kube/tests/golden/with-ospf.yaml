@@ -161,6 +161,8 @@ spec:
         - name: frr-source
           configMap:
             name: firezone-frr
+        - name: clamp-ready
+          emptyDir: {}
       containers:
         - name: firezone
           image: "ghcr.io/garuda-tunnel/garuda-firezone:latest"
@@ -185,6 +187,14 @@ spec:
           volumeMounts:
             - name: firezone-data
               mountPath: /var/firezone
+            - name: clamp-ready
+              mountPath: /var/lib/clamp
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "test -f /var/lib/clamp/ready"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "SYS_MODULE"]
@@ -215,6 +225,50 @@ spec:
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "NET_RAW", "SYS_ADMIN"]
+        - name: mss-clamp
+          # Empty image = reuse firezone image (ships nftables). Non-empty must be
+          # digest-pinned; schema pattern "^$|@sha256:[a-f0-9]{64}$" enforces this.
+          image: "ghcr.io/garuda-tunnel/garuda-firezone:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          volumeMounts:
+            - name: clamp-ready
+              mountPath: /var/lib/clamp
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Install MSS clamp in a SEPARATE table `inet firezone_mss`.
+              # DQ1: Firezone only manages `table inet firezone`; it never does
+              # `nft flush ruleset`, so our table survives its rewrites.
+              # Idempotent: atomic create-then-flush-then-re-add in one nft -f - call.
+              # NOT `set -eu` around the loop -- duplicate-add must not kill the sidecar.
+              install_clamp() {
+                nft -f - <<'NFTEOF'
+              table inet firezone_mss {
+                  chain forward {
+                      type filter hook forward priority mangle; policy accept;
+                      oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu
+                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set 1240
+                  }
+              }
+              flush table inet firezone_mss
+              table inet firezone_mss {
+                  chain forward {
+                      type filter hook forward priority mangle; policy accept;
+                      oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu
+                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set 1240
+                  }
+              }
+              NFTEOF
+              }
+              # One-shot install, signal readiness, then belt-and-braces existence check.
+              install_clamp && touch /var/lib/clamp/ready
+              while true; do
+                nft list table inet firezone_mss >/dev/null 2>&1 || install_clamp
+                sleep 300
+              done
 
 ---
 # Source: firezone/templates/httproute.yaml

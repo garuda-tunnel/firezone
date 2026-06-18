@@ -70,6 +70,10 @@ spec:
               "ospf" .Values.ospf
             ) -}}
         {{- if $frrVol }}{{ $frrVol | nindent 8 }}{{- end }}
+        {{- if .Values.mssClamp.enabled }}
+        - name: clamp-ready
+          emptyDir: {}
+        {{- end }}
       {{- $initFrr := include "frr-sidecar.initContainer" (dict
             "image" .Values.images.frr
             "ospf"  .Values.ospf
@@ -102,6 +106,18 @@ spec:
           volumeMounts:
             - name: firezone-data
               mountPath: /var/firezone
+            {{- if .Values.mssClamp.enabled }}
+            - name: clamp-ready
+              mountPath: /var/lib/clamp
+              readOnly: true
+            {{- end }}
+          {{- if .Values.mssClamp.enabled }}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "test -f /var/lib/clamp/ready"]
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          {{- end }}
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "SYS_MODULE"]
@@ -162,4 +178,50 @@ spec:
           volumeMounts:
             - name: oidc-reconcile-script
               mountPath: /opt/oidc-reconcile
+        {{- end }}
+        {{- if .Values.mssClamp.enabled }}
+        - name: mss-clamp
+          # Empty image = reuse firezone image (ships nftables). Non-empty must be
+          # digest-pinned; schema pattern "^$|@sha256:[a-f0-9]{64}$" enforces this.
+          image: {{ .Values.mssClamp.image | default (index .Values.images "firezone") | default (printf "ghcr.io/garuda-tunnel/garuda-firezone:%s" .Chart.Version) | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+          volumeMounts:
+            - name: clamp-ready
+              mountPath: /var/lib/clamp
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Install MSS clamp in a SEPARATE table `inet firezone_mss`.
+              # DQ1: Firezone only manages `table inet firezone`; it never does
+              # `nft flush ruleset`, so our table survives its rewrites.
+              # Idempotent: atomic create-then-flush-then-re-add in one nft -f - call.
+              # NOT `set -eu` around the loop -- duplicate-add must not kill the sidecar.
+              install_clamp() {
+                nft -f - <<'NFTEOF'
+              table inet firezone_mss {
+                  chain forward {
+                      type filter hook forward priority mangle; policy accept;
+                      oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu
+                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set {{ .Values.mssClamp.value }}
+                  }
+              }
+              flush table inet firezone_mss
+              table inet firezone_mss {
+                  chain forward {
+                      type filter hook forward priority mangle; policy accept;
+                      oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu
+                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set {{ .Values.mssClamp.value }}
+                  }
+              }
+              NFTEOF
+              }
+              # One-shot install, signal readiness, then belt-and-braces existence check.
+              install_clamp && touch /var/lib/clamp/ready
+              while true; do
+                nft list table inet firezone_mss >/dev/null 2>&1 || install_clamp
+                sleep {{ .Values.mssClamp.checkIntervalSeconds }}
+              done
         {{- end }}

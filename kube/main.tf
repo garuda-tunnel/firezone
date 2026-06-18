@@ -82,6 +82,10 @@ resource "helm_release" "firezone" {
       transit = {
         interfaces = var.transit.interfaces
       }
+      mssClamp = {
+        enabled = var.mss_clamp_enabled
+        value   = var.mss_clamp_value
+      }
     })
   ]
 }

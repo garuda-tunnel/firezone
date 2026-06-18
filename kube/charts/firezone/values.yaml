@@ -63,3 +63,19 @@ transit:
 oidc:
   managed: merge
   providers: {}
+# MSS clamp sidecar. Installs a separate `table inet firezone_mss` (DQ1: Firezone
+# never does `nft flush ruleset`, so this table survives independently). Provides:
+#   oifname "wg-firezone" clamp-to-pmtu  -- LOAD-BEARING return clamp (Chain-B SYN-ACK)
+#   iifname "wg-firezone" fixed MSS      -- defense for inbound-initiated flows
+# Sidecar shares pod netns (NET_ADMIN), writes /var/lib/clamp/ready, gates firezone Ready.
+mssClamp:
+  enabled: true
+  # Fixed MSS for the iifname (inbound-initiated) direction.
+  # Default = wg-firezone MTU(1280) - 40 = 1240. Must be >= QUIC 1200 floor.
+  value: 1240
+  # Sidecar image: empty => reuse the firezone container image (ships nftables).
+  # Non-empty MUST be a digest-pinned ref (@sha256:<64-hex>). Floating tags rejected by schema.
+  image: ""
+  # DQ1: Firezone never global-flushes nft, so this is belt-and-braces only.
+  # One-shot install on startup, then periodic existence-check (NOT reapply).
+  checkIntervalSeconds: 300

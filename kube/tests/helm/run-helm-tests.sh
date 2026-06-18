@@ -37,3 +37,40 @@ for scenario in default with-ospf oidc; do
 
   echo "ok: ${scenario}"
 done
+
+# --- MSS clamp assertions (TDD gate) ---
+# Default render must include the mss-clamp sidecar with BOTH directions and readiness gating.
+mss_out="$(helm template firezone "${CHART_DIR}" --namespace garuda -f "${SCRIPT_DIR}/values-default.yaml")"
+
+echo "${mss_out}" | grep -q 'firezone_mss' \
+  || { echo "FAIL: firezone_mss table missing from default render" >&2; exit 1; }
+
+echo "${mss_out}" | grep -q 'oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu' \
+  || { echo "FAIL: oifname (load-bearing return) clamp missing" >&2; exit 1; }
+
+echo "${mss_out}" | grep -q 'iifname "wg-firezone" tcp flags syn tcp option maxseg size set 1240' \
+  || { echo "FAIL: iifname (defense) clamp missing" >&2; exit 1; }
+
+echo "${mss_out}" | grep -q '/var/lib/clamp/ready' \
+  || { echo "FAIL: readiness flag path /var/lib/clamp/ready missing" >&2; exit 1; }
+
+# AC8 negative: no ICMP drop/reject rules.
+echo "${mss_out}" | grep -qiE 'icmp.*(drop|reject)|(drop|reject).*icmp' \
+  && { echo "FAIL: ICMP drop/reject found in render" >&2; exit 1; }
+
+echo "ok: mss-clamp assertions"
+
+# Off-switch: mssClamp.enabled=false must produce zero occurrences of firezone_mss.
+off_out="$(helm template firezone "${CHART_DIR}" --namespace garuda \
+  -f "${SCRIPT_DIR}/values-default.yaml" \
+  --set mssClamp.enabled=false)"
+count=$(echo "${off_out}" | grep -c 'firezone_mss' || true)
+[[ "${count}" -eq 0 ]] \
+  || { echo "FAIL: mssClamp.enabled=false still renders firezone_mss (count=${count})" >&2; exit 1; }
+echo "ok: mssClamp off-switch"
+
+# SF3: floating image tag must be rejected by the schema.
+schema_out="$(helm template firezone "${CHART_DIR}" --set mssClamp.image='nft:latest' 2>&1 || true)"
+echo "${schema_out}" | grep -qi 'pattern\|does not match' \
+  && echo "ok: schema rejects floating image tag" \
+  || { echo "FAIL: schema did NOT reject floating image tag 'nft:latest'" >&2; exit 1; }

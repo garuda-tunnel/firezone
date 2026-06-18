@@ -280,6 +280,33 @@ run "reject_invalid_oidc_managed" {
   expect_failures = [var.oidc_managed]
 }
 
+run "mss_clamp_defaults_propagate" {
+  command = plan
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"enabled\": true")
+    error_message = "rendered values must include mssClamp.enabled: true by default"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"value\": 1240")
+    error_message = "rendered values must include mssClamp.value: 1240 by default"
+  }
+}
+
+run "mss_clamp_disabled_propagates" {
+  command = plan
+
+  variables {
+    mss_clamp_enabled = false
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"enabled\": false")
+    error_message = "rendered values must include mssClamp.enabled: false when disabled"
+  }
+}
+
 # Regression: when firezone_image and frr_image are both empty, first-party
 # keys must be omitted from images override so the chart's pinned digest wins.
 # External keys (postgres, oidcReconcile) must always be present.
