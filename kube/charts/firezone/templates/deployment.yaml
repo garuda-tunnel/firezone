@@ -70,10 +70,8 @@ spec:
               "ospf" .Values.ospf
             ) -}}
         {{- if $frrVol }}{{ $frrVol | nindent 8 }}{{- end }}
-        {{- if .Values.mssClamp.enabled }}
         - name: clamp-ready
           emptyDir: {}
-        {{- end }}
       {{- $initFrr := include "frr-sidecar.initContainer" (dict
             "image" .Values.images.frr
             "ospf"  .Values.ospf
@@ -106,18 +104,14 @@ spec:
           volumeMounts:
             - name: firezone-data
               mountPath: /var/firezone
-            {{- if .Values.mssClamp.enabled }}
             - name: clamp-ready
               mountPath: /var/lib/clamp
               readOnly: true
-            {{- end }}
-          {{- if .Values.mssClamp.enabled }}
           readinessProbe:
             exec:
               command: ["sh", "-c", "test -f /var/lib/clamp/ready"]
             initialDelaySeconds: 2
             periodSeconds: 5
-          {{- end }}
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "SYS_MODULE"]
@@ -179,7 +173,6 @@ spec:
             - name: oidc-reconcile-script
               mountPath: /opt/oidc-reconcile
         {{- end }}
-        {{- if .Values.mssClamp.enabled }}
         - name: mss-clamp
           # Empty image = reuse firezone image (ships nftables). Non-empty must be
           # digest-pinned; schema pattern "^$|@sha256:[a-f0-9]{64}$" enforces this.
@@ -205,7 +198,9 @@ spec:
                   chain forward {
                       type filter hook forward priority mangle; policy accept;
                       oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu
-                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set {{ .Values.mssClamp.value }}
+              {{- if .Values.mtuPolicy.mssClampEnabled }}
+                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set {{ .Values.mtuPolicy.fixedMss }}
+              {{- end }}
                   }
               }
               flush table inet firezone_mss
@@ -213,7 +208,9 @@ spec:
                   chain forward {
                       type filter hook forward priority mangle; policy accept;
                       oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu
-                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set {{ .Values.mssClamp.value }}
+              {{- if .Values.mtuPolicy.mssClampEnabled }}
+                      iifname "wg-firezone" tcp flags syn tcp option maxseg size set {{ .Values.mtuPolicy.fixedMss }}
+              {{- end }}
                   }
               }
               NFTEOF
@@ -224,4 +221,3 @@ spec:
                 nft list table inet firezone_mss >/dev/null 2>&1 || install_clamp
                 sleep {{ .Values.mssClamp.checkIntervalSeconds }}
               done
-        {{- end }}

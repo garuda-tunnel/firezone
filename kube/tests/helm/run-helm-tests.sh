@@ -60,14 +60,24 @@ echo "${mss_out}" | grep -qiE 'icmp.*(drop|reject)|(drop|reject).*icmp' \
 
 echo "ok: mss-clamp assertions"
 
-# Off-switch: mssClamp.enabled=false must produce zero occurrences of firezone_mss.
+# Disabled-inbound: mtuPolicy.mssClampEnabled=false must:
+#   - still render the mss-clamp sidecar and table (route-PMTU remains)
+#   - omit the iifname fixed-MSS rule
 off_out="$(helm template firezone "${CHART_DIR}" --namespace garuda \
   -f "${SCRIPT_DIR}/values-default.yaml" \
-  --set mssClamp.enabled=false)"
-count=$(echo "${off_out}" | grep -c 'firezone_mss' || true)
-[[ "${count}" -eq 0 ]] \
-  || { echo "FAIL: mssClamp.enabled=false still renders firezone_mss (count=${count})" >&2; exit 1; }
-echo "ok: mssClamp off-switch"
+  --set mtuPolicy.mssClampEnabled=false)"
+
+echo "${off_out}" | grep -q 'firezone_mss' \
+  || { echo "FAIL: mssClampEnabled=false must still render firezone_mss table (route-PMTU)" >&2; exit 1; }
+
+echo "${off_out}" | grep -q 'oifname "wg-firezone" tcp flags syn tcp option maxseg size set rt mtu' \
+  || { echo "FAIL: mssClampEnabled=false must still render oifname route-PMTU rule" >&2; exit 1; }
+
+iif_count=$(echo "${off_out}" | grep -c 'iifname "wg-firezone"' || true)
+[[ "${iif_count}" -eq 0 ]] \
+  || { echo "FAIL: mssClampEnabled=false must NOT render iifname fixed-MSS rule (count=${iif_count})" >&2; exit 1; }
+
+echo "ok: mssClamp disabled-inbound: route-PMTU remains, iifname rule absent"
 
 # SF3: floating image tag must be rejected by the schema.
 schema_out="$(helm template firezone "${CHART_DIR}" --set mssClamp.image='nft:latest' 2>&1 || true)"

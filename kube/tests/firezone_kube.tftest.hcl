@@ -23,6 +23,9 @@ variables {
     databaseEncryptionKey = "fixture-database-encryption"
     databasePassword      = "fixture-database-password"
   }
+  mtu_policy = {
+    site_mtu = 1330
+  }
 }
 
 run "chart_resolves_from_oci" {
@@ -280,30 +283,71 @@ run "reject_invalid_oidc_managed" {
   expect_failures = [var.oidc_managed]
 }
 
-run "mss_clamp_defaults_propagate" {
-  command = plan
-
-  assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"enabled\": true")
-    error_message = "rendered values must include mssClamp.enabled: true by default"
-  }
-
-  assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"value\": 1240")
-    error_message = "rendered values must include mssClamp.value: 1240 by default"
-  }
-}
-
-run "mss_clamp_disabled_propagates" {
+run "mtu_policy_site_mtu_derives_values" {
   command = plan
 
   variables {
-    mss_clamp_enabled = false
+    mtu_policy = {
+      site_mtu = 1330
+    }
   }
 
   assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"enabled\": false")
-    error_message = "rendered values must include mssClamp.enabled: false when disabled"
+    condition     = local.effective_mtu == 1330
+    error_message = "site_mtu must derive effective_mtu 1330"
+  }
+
+  assert {
+    condition     = local.fixed_mss == 1240
+    error_message = "firezone must clamp to min(effective_mtu, firezone_client_mtu) - 40"
+  }
+}
+
+run "mtu_policy_helm_values_propagate" {
+  # mtuPolicy.fixedMss and mtuPolicy.mssClampEnabled must appear under mtuPolicy.
+  # Legacy policy keys mssClamp.enabled and mssClamp.value must be absent.
+  command = plan
+
+  variables {
+    mtu_policy = {
+      site_mtu = 1330
+    }
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"mtuPolicy\":")
+    error_message = "rendered values must include the mtuPolicy key"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"fixedMss\": 1240")
+    error_message = "rendered values must include mtuPolicy.fixedMss: 1240 for site_mtu=1330"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"mssClampEnabled\": true")
+    error_message = "rendered values must include mtuPolicy.mssClampEnabled: true by default"
+  }
+
+  assert {
+    condition     = !strcontains(helm_release.firezone.values[0], "\"mssClamp\":")
+    error_message = "legacy mssClamp policy key must be absent from rendered values"
+  }
+}
+
+run "mtu_policy_disabled_propagates" {
+  command = plan
+
+  variables {
+    mtu_policy = {
+      site_mtu          = 1330
+      mss_clamp_enabled = false
+    }
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"mssClampEnabled\": false")
+    error_message = "rendered values must include mtuPolicy.mssClampEnabled: false when disabled"
   }
 }
 
@@ -362,4 +406,69 @@ run "nonempty_firezone_image_overrides" {
     condition     = !strcontains(helm_release.firezone.values[0], "\"frr\":")
     error_message = "rendered values must NOT contain the frr key when frr_image is empty"
   }
+}
+
+run "mtu_policy_explicit_override_caps_to_firezone_client_mtu" {
+  # explicit override with effective_mtu=1380, fixed_mss=1340: Firezone inner cap
+  # (firezone_client_mtu default 1280) caps result to 1280-40=1240.
+  command = plan
+
+  variables {
+    mtu_policy = {
+      effective_mtu = 1380
+      fixed_mss     = 1340
+    }
+  }
+
+  assert {
+    condition     = local.effective_mtu == 1380
+    error_message = "explicit effective_mtu=1380 must be honored"
+  }
+
+  assert {
+    condition     = local.fixed_mss == 1240
+    error_message = "explicit fixed_mss=1340 must be capped by firezone_client_mtu(1280)-40=1240"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"fixedMss\": 1240")
+    error_message = "capped fixed_mss=1240 must appear as mtuPolicy.fixedMss in helm values"
+  }
+}
+
+run "mtu_policy_explicit_override_low_fixed_mss_honored" {
+  # explicit override with effective_mtu=1280, fixed_mss=1200: policy value(1200)
+  # is already below firezone_client_mtu(1280)-40=1240, so 1200 is honored.
+  command = plan
+
+  variables {
+    mtu_policy = {
+      effective_mtu = 1280
+      fixed_mss     = 1200
+    }
+  }
+
+  assert {
+    condition     = local.fixed_mss == 1200
+    error_message = "explicit fixed_mss=1200 below firezone cap must be honored as-is"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"fixedMss\": 1200")
+    error_message = "fixed_mss=1200 must appear as mtuPolicy.fixedMss in helm values"
+  }
+}
+
+run "mtu_policy_reject_xor_violation" {
+  # Passing both site_mtu and effective_mtu violates the XOR constraint.
+  command = plan
+
+  variables {
+    mtu_policy = {
+      site_mtu      = 1330
+      effective_mtu = 1280
+    }
+  }
+
+  expect_failures = [var.mtu_policy]
 }

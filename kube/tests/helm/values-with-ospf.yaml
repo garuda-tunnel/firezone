@@ -36,3 +36,6 @@ ospf:
   default_originate: false
   redistribute:
     - connected
+mtuPolicy:
+  mssClampEnabled: true
+  fixedMss: 1240

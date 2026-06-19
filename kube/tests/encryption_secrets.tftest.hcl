@@ -14,6 +14,9 @@ variables {
     name      = "platform-gateway"
     namespace = "gateway-system"
   }
+  mtu_policy = {
+    site_mtu = 1330
+  }
 }
 
 run "generated_path_includes_all_secret_keys" {

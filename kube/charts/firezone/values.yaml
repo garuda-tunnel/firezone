@@ -63,16 +63,21 @@ transit:
 oidc:
   managed: merge
   providers: {}
-# MSS clamp sidecar. Installs a separate `table inet firezone_mss` (DQ1: Firezone
+# MTU policy values — supplied by the consumer Terraform module.
+# The mss-clamp sidecar, readiness probe, and outbound oifname route-PMTU rule
+# are ALWAYS rendered. mssClampEnabled gates only the inbound iifname fixed-MSS
+# rule (`iifname "wg-firezone" tcp option maxseg size set fixedMss`).
+#   fixedMss: fixed MSS for the iifname (inbound) direction. Must be >= QUIC 1200 floor.
+mtuPolicy:
+  mssClampEnabled: true
+  fixedMss: 1240
+# MSS clamp sidecar — implementation knobs only (no policy values here).
+# Always rendered. Installs a separate `table inet firezone_mss` (DQ1: Firezone
 # never does `nft flush ruleset`, so this table survives independently). Provides:
-#   oifname "wg-firezone" clamp-to-pmtu  -- LOAD-BEARING return clamp (Chain-B SYN-ACK)
-#   iifname "wg-firezone" fixed MSS      -- defense for inbound-initiated flows
+#   oifname "wg-firezone" clamp-to-pmtu  -- LOAD-BEARING return clamp (Chain-B SYN-ACK), always active
+#   iifname "wg-firezone" fixed MSS      -- defense for inbound-initiated flows, gated on mssClampEnabled
 # Sidecar shares pod netns (NET_ADMIN), writes /var/lib/clamp/ready, gates firezone Ready.
 mssClamp:
-  enabled: true
-  # Fixed MSS for the iifname (inbound-initiated) direction.
-  # Default = wg-firezone MTU(1280) - 40 = 1240. Must be >= QUIC 1200 floor.
-  value: 1240
   # Sidecar image: empty => reuse the firezone container image (ships nftables).
   # Non-empty MUST be a digest-pinned ref (@sha256:<64-hex>). Floating tags rejected by schema.
   image: ""

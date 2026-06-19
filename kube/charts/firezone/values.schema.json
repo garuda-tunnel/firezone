@@ -18,7 +18,8 @@
     "adminEmail",
     "adminPassword",
     "secrets",
-    "oidc"
+    "oidc",
+    "mtuPolicy"
   ],
   "properties": {
     "namespace":        { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
@@ -113,13 +114,20 @@
     "frr-sidecar": {
       "type": "object"
     },
+    "mtuPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mssClampEnabled", "fixedMss"],
+      "properties": {
+        "mssClampEnabled": { "type": "boolean" },
+        "fixedMss": { "type": "integer", "minimum": 536, "maximum": 1460 }
+      }
+    },
     "mssClamp": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["enabled", "value"],
+      "required": [],
       "properties": {
-        "enabled": { "type": "boolean" },
-        "value": { "type": "integer", "minimum": 536, "maximum": 1460 },
         "image": {
           "type": "string",
           "pattern": "^$|@sha256:[a-f0-9]{64}$",

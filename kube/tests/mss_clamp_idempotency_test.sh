@@ -29,8 +29,8 @@ CHART_DIR="${SCRIPT_DIR}/../charts/firezone"
 rendered="$(helm template firezone "${CHART_DIR}" \
   --namespace garuda \
   -f "${SCRIPT_DIR}/helm/values-default.yaml" \
-  --set 'mssClamp.enabled=true' \
-  --set 'mssClamp.value=1240')"
+  --set 'mtuPolicy.mssClampEnabled=true' \
+  --set 'mtuPolicy.fixedMss=1240')"
 
 # ── Scratch directory ───────────────────────────────────────────────────────
 TMP="$(mktemp -d)"

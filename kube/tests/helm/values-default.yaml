@@ -29,3 +29,6 @@ secrets:
   databaseEncryptionKey: fixture-database-encryption
   databasePassword: fixture-database-password
 ospf: null
+mtuPolicy:
+  mssClampEnabled: true
+  fixedMss: 1240

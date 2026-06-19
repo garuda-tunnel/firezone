@@ -1,4 +1,15 @@
 locals {
+  effective_mtu = var.mtu_policy.site_mtu != null ? var.mtu_policy.site_mtu : var.mtu_policy.effective_mtu
+  # policy_fixed_mss: base MSS from the policy before applying the Firezone inner cap.
+  # In site mode: site_mtu - 40. In explicit mode: the caller-supplied fixed_mss.
+  policy_fixed_mss  = var.mtu_policy.site_mtu != null ? var.mtu_policy.site_mtu - 40 : var.mtu_policy.fixed_mss
+  # fixed_mss: cap policy_fixed_mss to firezone_client_mtu - 40. Firezone manages
+  # wg-firezone at a fixed MTU (default 1280) that Garuda cannot change, so the
+  # inbound MSS clamp must not exceed that interface's capacity.
+  fixed_mss         = min(local.policy_fixed_mss, var.firezone_client_mtu - 40)
+  # mss_clamp_enabled defaults to true via optional(bool, true) in the policy type.
+  mss_clamp_enabled = var.mtu_policy.mss_clamp_enabled
+
   ospf_values = var.ospf == null ? null : {
     router_id          = var.ospf.router_id
     interfaces         = var.ospf.interfaces
@@ -82,9 +93,9 @@ resource "helm_release" "firezone" {
       transit = {
         interfaces = var.transit.interfaces
       }
-      mssClamp = {
-        enabled = var.mss_clamp_enabled
-        value   = var.mss_clamp_value
+      mtuPolicy = {
+        fixedMss        = local.fixed_mss
+        mssClampEnabled = local.mss_clamp_enabled
       }
     })
   ]
