@@ -8,25 +8,30 @@ Security and contribution rules for garuda-firezone.
 - Never commit or use domains other than well-known examples or `example.net`.
 - Never commit secrets, tokens, private keys, or customer data.
 
-## FRR sidecar reuse — architectural rule
+## Garuda platform rules
 
-This module consumes the `frr-sidecar` library Helm chart from OCI
-(`oci://ghcr.io/garuda-tunnel/charts/frr-sidecar`, published by the external repo
-`garuda-tunnel/garuda-frr-sidecar`). The consumer chart `kube/charts/firezone/Chart.yaml`
-declares it via `dependencies:` with `repository: "oci://ghcr.io/garuda-tunnel/charts"`
-and a pinned `version`. The Terraform `helm_release` sets `dependency_update = true`
-so Helm resolves the OCI dependency at apply time (unauthenticated for the public
-ghcr package).
+This repo is part of garuda-tunnel. Platform rules (annotation-layer design, MAP/VAP
+injection engine, `garuda_guest` contract, vanilla guest contract, bootstrap timing,
+Multus attach-race fix, anti-patterns):
 
-Anti-patterns (do NOT do this):
-- Use `file://` form — it is OBSOLETE.
-- Pin to a non-immutable tag (e.g. `latest`) — always pin to a specific semver version.
-- Vendor the chart by copying it into consumer `charts/` directories.
-- Inline copy of `frr-sidecar` container spec in consumer `deployment.yaml`.
-- Local `<workload>.frrConf` helper duplicating `frr-sidecar.frrConf` rendering logic.
+**See: https://github.com/garuda-tunnel/garuda/blob/main/docs/AGENTS-platform.md**
+Local path: `../garuda/docs/AGENTS-platform.md`
 
 ## Naming
 
 This repo is `garuda-firezone`; its image is `ghcr.io/garuda-tunnel/garuda-firezone`;
 its chart is `oci://ghcr.io/garuda-tunnel/charts/firezone`. The chart `version` in
 `kube/charts/firezone/Chart.yaml` MUST equal the git tag.
+
+## Firezone-specific notes
+
+- PostgreSQL is a hard dependency. The chart always deploys postgres:15 as a subchart.
+  The `oidcReconcile` literal in `values.yaml` must not be templated or made optional —
+  it is a Firezone API invariant.
+- `NET_ADMIN` and `SYS_MODULE` capabilities are app-intrinsic (Firezone loads the
+  WireGuard kernel module). These stay in the guest chart's own `securityContext` and are
+  NOT injected by garuda's MAP.
+- The dedicated `mss-clamp` sidecar and `nft table firezone_mss` are workload-native MSS
+  enforcement — stay in this chart, not injected by garuda.
+- This module is a **vanilla guest**: accepts `annotations`, `labels`, `configmaps` map
+  inputs and has zero garuda knowledge. See platform rules for the full contract.
