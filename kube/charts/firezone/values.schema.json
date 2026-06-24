@@ -46,6 +46,14 @@
       "type": "object",
       "additionalProperties": { "type": "string" }
     },
+    "podLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "podAnnotations": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
     "images": {
       "type": "object",
       "additionalProperties": false,
@@ -53,7 +61,6 @@
       "properties": {
         "firezone":      { "type": "string" },
         "postgres":      { "type": "string" },
-        "frr":           { "type": "string" },
         "oidcReconcile": { "type": "string" }
       }
     },
@@ -94,14 +101,6 @@
         "transit_provider":   { "type": "boolean" }
       }
     },
-    "transit": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["interfaces"],
-      "properties": {
-        "interfaces": { "type": "array", "items": { "type": "string" } }
-      }
-    },
     "oidc": {
       "type": "object",
       "properties": {
@@ -110,9 +109,6 @@
       },
       "required": ["managed", "providers"],
       "additionalProperties": false
-    },
-    "frr-sidecar": {
-      "type": "object"
     },
     "mtuPolicy": {
       "type": "object",

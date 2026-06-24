@@ -44,33 +44,6 @@ stringData:
   POSTGRES_PASSWORD: "fixture-database-password"
 
 ---
-# Source: firezone/templates/configmap-frr.yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: "firezone-frr"
-  namespace: "garuda"
-data:
-  frr.conf: |
-    frr defaults traditional
-    log file /tmp/frr.log
-    zebra nexthop proto only
-    interface wg-firezone
-     ip ospf area 0.0.0.0
-    ip ospf hello-interval 5
-     ip ospf dead-interval 15
-     ip ospf mtu-ignore
-    router ospf
-     ospf router-id 198.51.100.22
-    redistribute connected
-    
-  daemons: |
-    zebra=yes
-    ospfd=yes
-  vtysh.conf: |
-    service integrated-vtysh-config
-
----
 # Source: firezone/templates/service.yaml
 apiVersion: v1
 kind: Service
@@ -127,9 +100,7 @@ spec:
         app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
       annotations:
-        k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
         checksum/env-secret: f74094ed92c2d250b3cfbb400df85dfc86157dc3317a488f279040473ebb6470
-        checksum/frr-config: ba1c797f3061c9ac871af2d178c400dfe7f13315752156fe7fd197b71a86c0b0
     spec:
       restartPolicy: Always
       # Match the existing docker-compose stack's sysctls. All three are
@@ -158,9 +129,6 @@ spec:
           hostPath:
             path: "/opt/garuda/firezone/postgres-data"
             type: DirectoryOrCreate
-        - name: frr-source
-          configMap:
-            name: firezone-frr
         - name: clamp-ready
           emptyDir: {}
       containers:
@@ -215,16 +183,6 @@ spec:
                 - postgres
             initialDelaySeconds: 5
             periodSeconds: 10
-        - name: frr-sidecar
-          image: "ghcr.io/garuda-tunnel/garuda-frr-sidecar:latest"
-          imagePullPolicy: IfNotPresent
-          volumeMounts:
-            - name: frr-source
-              mountPath: /etc/frr-source
-              readOnly: true
-          securityContext:
-            capabilities:
-              add: ["NET_ADMIN", "NET_RAW", "SYS_ADMIN"]
         - name: mss-clamp
           # Empty image = reuse firezone image (ships nftables). Non-empty must be
           # digest-pinned; schema pattern "^$|@sha256:[a-f0-9]{64}$" enforces this.

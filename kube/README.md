@@ -12,10 +12,9 @@ gateway; this module does not create a cert-manager `Certificate`.
 The Firezone-managed WireGuard endpoint is exposed as a `hostPort` on
 UDP `var.wg_listen_port` (default 51620) on the hub node.
 
-When `ospf` is set, an FRR sidecar runs in the same pod's network
-namespace and speaks OSPF on the interfaces declared in `ospf.interfaces`
-(typically `wg-firezone`, the kernel interface the Firezone server
-creates inside the pod netns).
+The `ospf` variable is accepted for backward compatibility but is ignored by
+the chart (the FRR sidecar was removed in Phase 4+5 Decision #5; Garuda
+now injects fabric-level routing via the annotation layer).
 
 ## Inputs
 
@@ -26,7 +25,7 @@ creates inside the pod netns).
 | `firezone_dir` | yes | Absolute host path that backs Firezone runtime state via hostPath. |
 | `firezone_image` | no | Image reference for the firezone application container. Empty (default) uses the chart's pinned digest. |
 | `postgres_image` | no | Default `postgres:15`. |
-| `frr_image` | when `ospf != null` | Image for the optional frr-sidecar. |
+| `frr_image` | no | Inert (deprecated). Kept for back-compat; ignored by chart. See Phase 4+5 Decision #5. |
 | `server_fqdn` | yes | External FQDN; both `EXTERNAL_URL` and IngressRoute Host match. |
 | `admin_email` | yes | Initial admin email (`DEFAULT_ADMIN_EMAIL`). |
 | `admin_password` | yes (sensitive) | Initial admin password (`DEFAULT_ADMIN_PASSWORD`). |
@@ -34,8 +33,10 @@ creates inside the pod netns).
 | `wg_listen_port` | no | UDP port firezone WireGuard listens on. Default `51620`. |
 | `gateway_ref` | yes | Parent Gateway reference object (`{name, namespace}`) for the HTTPRoute. Supplied by the platform `k8s_gateway_bootstrap` module. |
 | `nic_attach` | no | Default `["backbone", "border"]`. Becomes the Multus annotation. |
-| `labels` | no | Extra metadata labels merged into pod/deployment labels. |
-| `ospf` | no | Structured OSPF intent. When `null`, no FRR sidecar is rendered. |
+| `labels` | no | Extra metadata labels merged into pod/deployment labels. Also propagated to `podLabels` (vanilla-guest contract). |
+| `annotations` | no | Pod-template annotations. From `garuda_guest.annotations`; propagated to `podAnnotations`. |
+| `configmaps` | no | Extra ConfigMaps created before pod admission. From `garuda_guest.configmaps`. |
+| `ospf` | no | Structured OSPF intent. Accepted for backward compatibility; ignored by the chart (FRR sidecar removed). |
 
 ### `ospf` object
 

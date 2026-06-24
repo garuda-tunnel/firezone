@@ -351,15 +351,14 @@ run "mtu_policy_disabled_propagates" {
   }
 }
 
-# Regression: when firezone_image and frr_image are both empty, first-party
-# keys must be omitted from images override so the chart's pinned digest wins.
-# External keys (postgres, oidcReconcile) must always be present.
+# Vanilla-guest contract: images.firezone empty → chart's pinned digest wins;
+# external images (postgres, oidcReconcile) always present; no frr key ever
+# emitted (frr-sidecar was removed in Phase 4+5 Decision #5).
 run "empty_firstparty_images_omit_keys" {
   command = plan
 
   variables {
     firezone_image       = ""
-    frr_image            = ""
     postgres_image       = "postgres:15"
     oidc_reconcile_image = "python:3.12-slim-bookworm"
   }
@@ -381,18 +380,30 @@ run "empty_firstparty_images_omit_keys" {
 
   assert {
     condition     = !strcontains(helm_release.firezone.values[0], "\"frr\":")
-    error_message = "rendered values must NOT contain the frr key when frr_image is empty"
+    error_message = "rendered values must NOT contain the frr key (frr-sidecar removed Phase 4+5)"
+  }
+
+  # Vanilla-guest contract: podAnnotations and podLabels keys must always be
+  # present in rendered values (empty maps render as null in yamlencode when
+  # not set; the module always passes them so the chart can merge injected values).
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"podAnnotations\":")
+    error_message = "rendered values must always contain podAnnotations (vanilla-guest contract)"
+  }
+
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"podLabels\":")
+    error_message = "rendered values must always contain podLabels (vanilla-guest contract)"
   }
 }
 
-# Regression: when firezone_image is non-empty it must appear in the override,
-# and frr_image empty means the frr key must remain absent.
+# Regression: non-empty firezone_image must appear in images override;
+# frr key must remain absent regardless (frr-sidecar removed Phase 4+5).
 run "nonempty_firezone_image_overrides" {
   command = plan
 
   variables {
     firezone_image       = "ghcr.io/garuda-tunnel/garuda-firezone@sha256:2222222222222222222222222222222222222222222222222222222222222222"
-    frr_image            = ""
     postgres_image       = "postgres:15"
     oidc_reconcile_image = "python:3.12-slim-bookworm"
   }
@@ -404,7 +415,7 @@ run "nonempty_firezone_image_overrides" {
 
   assert {
     condition     = !strcontains(helm_release.firezone.values[0], "\"frr\":")
-    error_message = "rendered values must NOT contain the frr key when frr_image is empty"
+    error_message = "rendered values must NOT contain the frr key (frr-sidecar removed Phase 4+5)"
   }
 }
 
@@ -471,4 +482,27 @@ run "mtu_policy_reject_xor_violation" {
   }
 
   expect_failures = [var.mtu_policy]
+}
+
+run "passthrough_annotations_labels_configmaps" {
+  command = plan
+  variables {
+    annotations = { "net.garuda-tunnel/router-id" = "10.130.30.10" }
+    labels      = { "net.garuda-tunnel/profile" = "ospf-router" }
+    configmaps  = { "firezone-frr-extra" = { "extra.conf" = "ip forwarding" } }
+  }
+  # OpenTofu yamlencode emits quoted keys for map entries with dots/slashes:
+  #   "net.garuda-tunnel/router-id": "10.130.30.10"
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"net.garuda-tunnel/router-id\": \"10.130.30.10\"")
+    error_message = "podAnnotations must carry the injected router-id value"
+  }
+  assert {
+    condition     = strcontains(helm_release.firezone.values[0], "\"net.garuda-tunnel/profile\": \"ospf-router\"")
+    error_message = "podLabels must carry the injected profile label"
+  }
+  assert {
+    condition     = length(kubernetes_config_map.garuda_extra) == 1 && contains(keys(kubernetes_config_map.garuda_extra), "firezone-frr-extra")
+    error_message = "one ConfigMap must be planned per configmaps entry, keyed by CM name"
+  }
 }

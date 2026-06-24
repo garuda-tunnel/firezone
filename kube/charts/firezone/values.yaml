@@ -29,10 +29,11 @@ nicAttach:
   - backbone
   - border
 labels: {}
+podLabels: {}
+podAnnotations: {}
 images:
   firezone: ""
   postgres: postgres:15
-  frr: ""
   oidcReconcile: ""
 # Required: consumer module supplies via var.admin_email. Empty default
 # fails fast.
@@ -48,15 +49,9 @@ secrets:
   cookieEncryptionSalt: "placeholder_cookieencryption"
   databaseEncryptionKey: "placeholder_dbencryption"
   databasePassword: "placeholder_dbpassword"
-# ospf is null when omitted; FRR sidecar is then NOT rendered.
+# ospf: null — kept for back-compat; ignored by chart (FRR sidecar removed
+# in Phase 4+5 Decision #5; Garuda injects routing via annotation layer).
 ospf: null
-# transit.interfaces is the CSV ingress list for transit_watcher running
-# inside the FRR sidecar. When non-empty, the deployment exports
-# PBR_TRANSIT_TAG=201 (matches frr_injector/config.py:TRANSIT_TAG) and
-# PBR_TRANSIT_INTERFACES — the sidecar entrypoint then launches
-# transit_watcher.py automatically.
-transit:
-  interfaces: []
 # OIDC reconcile. When oidc.providers is empty, no sidecar / Secret /
 # shareProcessNamespace is rendered (OIDC off). When non-empty, the
 # oidc-reconcile sidecar reconciles providers onto the running instance.

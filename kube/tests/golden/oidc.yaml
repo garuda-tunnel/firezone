@@ -367,11 +367,12 @@ spec:
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
+        net.garuda-tunnel/profile: oidc-guest
       annotations:
-        k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
         checksum/env-secret: f74094ed92c2d250b3cfbb400df85dfc86157dc3317a488f279040473ebb6470
         checksum/oidc-secret: df06c5771bfee8f263765a4ba98491e51bf02916a272368268bc857f3aa895b8
         checksum/oidc-reconcile: 5a606f9ad55bb3afe06a94781ddf0090d68568f8474c5faa42e9b3dc5e3bc0a0
+        net.garuda-tunnel/router-id: 198.51.100.22
     spec:
       restartPolicy: Always
       shareProcessNamespace: true

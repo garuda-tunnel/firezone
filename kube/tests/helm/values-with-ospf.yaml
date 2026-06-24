@@ -17,7 +17,6 @@ labels: {}
 images:
   firezone: ghcr.io/garuda-tunnel/garuda-firezone:latest
   postgres: postgres:15
-  frr: ghcr.io/garuda-tunnel/garuda-frr-sidecar:latest
 adminEmail: admin@example.net
 adminPassword: fixture-password
 secrets:

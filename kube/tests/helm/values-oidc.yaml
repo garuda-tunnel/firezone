@@ -14,10 +14,13 @@ nicAttach:
   - backbone
   - border
 labels: {}
+podLabels:
+  net.garuda-tunnel/profile: oidc-guest
+podAnnotations:
+  net.garuda-tunnel/router-id: 198.51.100.22
 images:
   firezone: ghcr.io/garuda-tunnel/garuda-firezone:latest
   postgres: postgres:15
-  frr: ""
   oidcReconcile: python:3.12-slim-bookworm
 adminEmail: admin@example.net
 adminPassword: fixture-password

@@ -19,15 +19,17 @@ spec:
     metadata:
       labels:
         {{- include "firezone.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
-        k8s.v1.cni.cncf.io/networks: {{ include "firezone.networks" . | quote }}
         checksum/env-secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- if .Values.oidc.providers }}
         checksum/oidc-secret: {{ include (print $.Template.BasePath "/oidc-secret.yaml") . | sha256sum }}
         checksum/oidc-reconcile: {{ include (print $.Template.BasePath "/oidc-reconcile-configmap.yaml") . | sha256sum }}
         {{- end }}
-        {{- if .Values.ospf }}
-        checksum/frr-config: {{ include "frr-sidecar.configmap" (dict "name" .Values.name "namespace" .Values.namespace "ospf" .Values.ospf) | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
       restartPolicy: Always
@@ -65,21 +67,8 @@ spec:
           configMap:
             name: {{ .Values.name }}-oidc-reconcile
         {{- end }}
-        {{- $frrVol := include "frr-sidecar.volume" (dict
-              "name" .Values.name
-              "ospf" .Values.ospf
-            ) -}}
-        {{- if $frrVol }}{{ $frrVol | nindent 8 }}{{- end }}
         - name: clamp-ready
           emptyDir: {}
-      {{- $initFrr := include "frr-sidecar.initContainer" (dict
-            "image" .Values.images.frr
-            "ospf"  .Values.ospf
-          ) -}}
-      {{- if $initFrr }}
-      initContainers:
-        {{- $initFrr | nindent 8 }}
-      {{- end }}
       containers:
         - name: firezone
           image: {{ .Values.images.firezone | default (printf "ghcr.io/garuda-tunnel/garuda-firezone:%s" .Chart.Version) | quote }}
@@ -132,12 +121,6 @@ spec:
                 - postgres
             initialDelaySeconds: 5
             periodSeconds: 10
-        {{- $frr := include "frr-sidecar.container" (dict
-              "image" .Values.images.frr
-              "ospf" .Values.ospf
-              "transit" .Values.transit
-            ) -}}
-        {{- if $frr }}{{ $frr | nindent 8 }}{{- end }}
         {{- if .Values.oidc.providers }}
         - name: oidc-reconcile
           image: {{ .Values.images.oidcReconcile | quote }}

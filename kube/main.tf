@@ -28,7 +28,6 @@ locals {
       oidcReconcile = var.oidc_reconcile_image
     },
     var.firezone_image == "" ? {} : { firezone = var.firezone_image },
-    var.frr_image == "" ? {} : { frr = var.frr_image },
   )
 
   firezone_secrets = {
@@ -50,6 +49,15 @@ resource "random_bytes" "cookie_encryption_salt" { length = 6 }
 resource "random_bytes" "database_encryption_key" { length = 32 }
 resource "random_bytes" "database_password" { length = 12 }
 
+resource "kubernetes_config_map" "garuda_extra" {
+  for_each = var.configmaps
+  metadata {
+    name      = each.key
+    namespace = var.namespace
+  }
+  data = each.value   # { filename => content } per Decision #11
+}
+
 resource "helm_release" "firezone" {
   name             = var.name
   namespace        = var.namespace
@@ -60,9 +68,11 @@ resource "helm_release" "firezone" {
   chart      = "firezone"
   version    = var.chart_version
 
-  # No-op for the OCI path (dependency is vendored in the published tgz);
-  # kept so the local-path dev/hotfix escape hatch still resolves frr-sidecar.
+  # No-op for the OCI path (no subchart dependencies remain);
+  # kept for the local-path dev/hotfix escape hatch.
   dependency_update = true
+
+  depends_on = [kubernetes_config_map.garuda_extra]
 
   values = [
     yamlencode({
@@ -79,8 +89,10 @@ resource "helm_release" "firezone" {
         name      = var.gateway_ref.name
         namespace = var.gateway_ref.namespace
       }
-      nicAttach = var.nic_attach
-      labels    = var.labels
+      nicAttach      = var.nic_attach
+      labels         = var.labels
+      podLabels      = var.labels      # same map feeds both labels and podLabels (not a typo — vanilla-guest contract)
+      podAnnotations = var.annotations
       images    = local.images_override
       oidc = {
         managed   = var.oidc_managed
@@ -90,9 +102,6 @@ resource "helm_release" "firezone" {
       adminPassword = var.admin_password
       secrets       = local.firezone_secrets
       ospf          = local.ospf_values
-      transit = {
-        interfaces = var.transit.interfaces
-      }
       mtuPolicy = {
         fixedMss        = local.fixed_mss
         mssClampEnabled = local.mss_clamp_enabled

@@ -100,7 +100,6 @@ spec:
         app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
       annotations:
-        k8s.v1.cni.cncf.io/networks: "backbone@backbone,border@border"
         checksum/env-secret: f74094ed92c2d250b3cfbb400df85dfc86157dc3317a488f279040473ebb6470
     spec:
       restartPolicy: Always

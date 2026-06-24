@@ -42,7 +42,11 @@ variable "postgres_image" {
 }
 
 variable "frr_image" {
-  description = "Image reference for the frr-sidecar container. Required when ospf != null; ignored otherwise."
+  # DEPRECATED: kept inert per Phase 4+5 Decision #5; removed in follow-up cleanup.
+  # The FRR sidecar is no longer rendered by this chart. Garuda injects routing
+  # via the annotation layer (net.garuda-tunnel/profile). This variable is accepted
+  # for backward compatibility with callers that still set it.
+  description = "Inert. Formerly the frr-sidecar image; removed in Phase 4+5. Kept for back-compat."
   type        = string
   default     = ""
 }
@@ -205,14 +209,10 @@ EOT
 }
 
 variable "transit" {
-  description = <<EOT
-Transit-watcher inputs for the bundled FRR sidecar. When `interfaces`
-is non-empty, the chart exports PBR_TRANSIT_TAG and PBR_TRANSIT_INTERFACES,
-which the sidecar entrypoint uses to start transit_watcher.py — matching
-the FRR sidecar OSPF contract.
-The OSPF tag is hardcoded to TRANSIT_TAG=201 in the chart helper to match
-the frr-sidecar library constants without exposing extra surface here.
-EOT
+  # DEPRECATED: kept inert per Phase 4+5 Decision #5; removed in follow-up cleanup.
+  # The FRR sidecar (and PBR_TRANSIT_TAG/PBR_TRANSIT_INTERFACES env wiring) was
+  # removed from this chart. Kept for back-compat with callers that still set it.
+  description = "Inert. Formerly transit-watcher inputs for the FRR sidecar; removed in Phase 4+5. Kept for back-compat."
   type = object({
     interfaces = list(string)
   })
@@ -256,6 +256,18 @@ variable "oidc_reconcile_image" {
   description = "Image for the oidc-reconcile sidecar. Must ship python3 and nsenter (util-linux)."
   type        = string
   default     = "python:3.12-slim-bookworm"
+}
+
+variable "annotations" {
+  description = "Pod-template annotations. From garuda_guest.annotations."
+  type        = map(string)
+  default     = {}
+}
+
+variable "configmaps" {
+  description = "Extra ConfigMaps to create before pod admission. From garuda_guest.configmaps."
+  type        = map(map(string))
+  default     = {}
 }
 
 variable "chart_version" {
