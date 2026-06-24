@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/garuda-tunnel/firezone-internal/compare/v1.1.0...v1.2.0) (2026-06-24)
+
+
+### Features
+
+* **firezone:** vanilla guest chart — podLabels/podAnnotations, drop frr-sidecar dep + networks helper ([810d180](https://github.com/garuda-tunnel/firezone-internal/commit/810d1800bab4281868c57745faf30766e1d25f29))
+* vanilla-guest passthrough + drop frr-sidecar (Phase 4+5) ([5bbe2fa](https://github.com/garuda-tunnel/firezone-internal/commit/5bbe2faa6a341bcd5620f696237ad114aff7feda))
+
 ## [1.1.0](https://github.com/garuda-tunnel/firezone-internal/compare/v1.0.0...v1.1.0) (2026-06-19)
 
 
