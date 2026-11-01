@@ -8,6 +8,15 @@ Security and contribution rules for garuda-firezone.
 - Never commit or use domains other than well-known examples or `example.net`.
 - Never commit secrets, tokens, private keys, or customer data.
 
+### Vendored third-party code (`kube/image/src/`)
+
+`kube/image/src/` is a vendored copy of upstream Firezone 0.7.36 (Apache-2.0),
+not our code. The "no non-example domains / no real IPs" rules above do NOT
+apply to it (upstream code references `firezone.dev` etc. and test IP ranges).
+It must not be edited except the allow-listed dependency manifests listed in
+`kube/image/src/UPSTREAM.md`; `kube/image/source-guard.sh` (CI job
+`source-guard`) enforces byte-identity with upstream for everything else.
+
 ## Garuda platform rules
 
 This repo is part of garuda-tunnel. Platform rules (annotation-layer design, MAP/VAP

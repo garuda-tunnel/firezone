@@ -1,0 +1,21 @@
+# Accepted vulnerability exceptions for the garuda-firezone image and
+# kube/image/src lockfiles. Operator decision 2026-10-31 (firezone-internal#37).
+# Re-review everything below at the exp: dates.
+# NOTE: trivy parses exp: only inline on the same line as the ID, no space:
+# `<ID> exp:YYYY-MM-DD>`. Separate exp: lines are silently ignored.
+
+# hackney 1.25.0 (mix.lock), reachable at runtime only via posthog ~> 0.1
+# (the sole runtime consumer pinning hackney ~> 1.20; the fix is 4.x-only and
+# wallaby 0.30 caps the line below 3). Firezone touches it only when telemetry
+# is enabled, and the chart defaults telemetryEnabled=false.
+# CONDITION: telemetry must stay disabled (chart default).
+# EEF-CVE-2026-115693 = mix hex.audit CRITICAL; CVE-2026-115693 and
+# CVE-2026-47071 = trivy's spellings of the same hackney advisory.
+EEF-CVE-2026-115693 exp:2027-05-01
+CVE-2026-115693 exp:2027-05-01
+CVE-2026-47071 exp:2027-05-01
+
+# tar 6.1.13 (yarn.lock) — build-time only: pulled by node-gyp via the
+# un-editable node-sass chain during `yarn install` in the assets stage.
+# Not shipped: absent from the runtime image (verified by trivy-image).
+CVE-2026-59873 exp:2027-05-01

@@ -1,5 +1,37 @@
 # firezone/kube
 
+## Image
+
+`ghcr.io/garuda-tunnel/garuda-firezone` is **built from vendored source**, not
+`FROM firezone/firezone`:
+
+- Source: upstream `firezone/firezone` tag `0.7.36`, commit `dc71329`,
+  vendored into `kube/image/src/` (details, allow-list and version table:
+  `kube/image/src/UPSTREAM.md`). The `source-guard` CI job diffs it against
+  upstream on every change.
+- The four former `firezone/*` git dependencies come from public
+  `garuda-tunnel` forks, pinned by tag: `openid_connect`, `esaml`, `samly`,
+  `cidr-elixir` (see `mix.exs` / `apps/*/mix.exs`).
+- Toolchain (erlang/elixir/nodejs) is pinned once in
+  `kube/image/src/.tool-versions`; `kube/image/Dockerfile` base images match it
+  (enforced by `source-guard.sh`). The wireguardex NIF is compiled from source
+  in the builder (`WIREGUARDNIF_BUILD=1`), not downloaded precompiled.
+- Accepted vulnerability exceptions: `kube/image/.trivyignore` and
+  `kube/image/src/UPSTREAM.md`.
+
+Rebuild locally:
+
+```sh
+docker build -t fz-local kube/image
+kube/image/compat/check.sh fz-local
+```
+
+`kube/image/compat/check.sh <image-ref>` verifies the image against
+upstream-0.7.36 fixtures (Cloak ciphertext, argon2 hash), the wireguardex NIF,
+the chart's mss-clamp nftables ruleset, and the runtime (non-EOL Alpine).
+`make-fixtures.sh` regenerates the fixtures from `firezone/firezone:0.7.36`.
+The same checks run in CI (`image-compat` job) against every pushed dev image.
+
 Deploys the Firezone application stack as one multi-container Kubernetes
 Deployment with persistent state on a hostPath volume backed by the YC
 data disk attached to the hub VM.

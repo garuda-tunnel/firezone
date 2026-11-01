@@ -1,0 +1,11 @@
+# Matches upstream firezone 0.7.36 .dockerignore (context-rooted there,
+# src/-rooted here) plus src/deps: keeps local dev/test artifacts and the
+# SAML test private key (apps/fz_http/priv/cert) out of the build context
+# and the release. Build itself never reads priv/cert: config.exs only
+# stores the dev path string, prod runtime.exs uses /var/firezone/*.
+src/apps/fz_http/assets/node_modules
+src/apps/fz_http/priv/static/dist
+src/apps/fz_http/priv/cert
+src/_build
+src/deps
+**/cover

@@ -1,0 +1,44 @@
+{
+  "name": "firezone",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/firezone/firezone.git"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "deploy": "node esbuild.js prod",
+    "watch": "node esbuild.js dev"
+  },
+  "engines": {
+    "node": ">= 14.0.0"
+  },
+  "dependencies": {
+    "buffer": "^6.0.3",
+    "buffer-from": "^1.1.1",
+    "glob": "^7.2.3",
+    "highlight.js": "^11.12.0",
+    "phoenix": "file:../../../deps/phoenix",
+    "phoenix_html": "file:../../../deps/phoenix_html",
+    "phoenix_live_view": "file:../../../deps/phoenix_live_view",
+    "qrcode": "^1.5.4",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "devDependencies": {
+    "@creativebulma/bulma-tooltip": "^1.2.0",
+    "@fontsource/fira-mono": "^5.3.0",
+    "@fontsource/fira-sans": "^5.3.0",
+    "@fontsource/open-sans": "^5.3.0",
+    "@fortawesome/fontawesome-free": "^5.15.3",
+    "@mdi/font": "^6.9.96",
+    "admin-one-bulma-dashboard": "file:local_modules/admin-one-bulma-dashboard",
+    "esbuild": "^0.28.0",
+    "esbuild-sass-plugin": "^3.7.0",
+    "zxcvbn": "^4.4.2"
+  },
+  "resolutions": {
+    "sass": "~1.99.0",
+    "form-data": "2.5.4"
+  }
+}
