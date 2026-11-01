@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.0](https://github.com/garuda-tunnel/firezone-internal/compare/v1.3.0...v1.4.0) (2026-11-01)
+
+
+### Features
+
+* **chart:** ship the source-built Firezone 0.7.36 image ([#45](https://github.com/garuda-tunnel/firezone-internal/issues/45)) ([144619c](https://github.com/garuda-tunnel/firezone-internal/commit/144619c7b3c9d8057d57702f0da479703cc2df50)), closes [#26](https://github.com/garuda-tunnel/firezone-internal/issues/26)
+
 ## [1.3.0](https://github.com/garuda-tunnel/firezone-internal/compare/v1.2.0...v1.3.0) (2026-08-28)
 
 
