@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/garuda-tunnel/firezone-internal/compare/v2.0.0...v2.0.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **chart:** document the clamped WireGuard key requirement in values.yaml ([#52](https://github.com/garuda-tunnel/firezone-internal/issues/52)) ([7764b7f](https://github.com/garuda-tunnel/firezone-internal/commit/7764b7f9861e3681980853aa23239215f2c61cf1)), closes [#39](https://github.com/garuda-tunnel/firezone-internal/issues/39)
+
 ## [2.0.0](https://github.com/garuda-tunnel/firezone-internal/compare/v1.4.0...v2.0.0) (2026-11-03)
 
 
