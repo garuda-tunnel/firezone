@@ -57,6 +57,8 @@ secrets:
   cookieEncryptionSalt: "placeholder_cookieencryption"
   databaseEncryptionKey: "placeholder_dbencryption"
   databasePassword: "placeholder_dbpassword"
+  # Required: WireGuard server private key (base64), supplied by the consumer module.
+  wireguardPrivateKey: ""
 # ospf: null — kept for back-compat; ignored by chart (FRR sidecar removed
 # in Phase 4+5 Decision #5; Garuda injects routing via annotation layer).
 ospf: null

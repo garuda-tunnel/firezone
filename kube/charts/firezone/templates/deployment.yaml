@@ -6,9 +6,8 @@ metadata:
   labels:
     {{- include "firezone.labels" . | nindent 4 }}
 spec:
-  # Recreate: postgres lockfiles and firezone runtime state in the
-  # hostPath volume do not tolerate parallel pods, which RollingUpdate
-  # would briefly create on a replacement.
+  # Recreate: postgres lockfiles in the hostPath volume do not tolerate
+  # parallel pods, which RollingUpdate would briefly create on a replacement.
   strategy:
     type: Recreate
   replicas: 1
@@ -51,13 +50,19 @@ spec:
           - name: net.ipv4.conf.all.rp_filter
             value: "2"
       volumes:
-        # Persistent runtime state for both the Phoenix application and
-        # postgres. Backed by the YC data disk re-attached after VM
-        # replacement.
+        # Disposable Phoenix state only (SAML self-signed cert, telemetry id).
+        # The WireGuard server key lives in the env Secret, not here.
         - name: firezone-data
-          hostPath:
-            path: {{ printf "%s/firezone-data" .Values.firezoneDir | quote }}
-            type: DirectoryOrCreate
+          emptyDir: {}
+        # Required (no `optional`): a missing key keeps the pod from starting
+        # instead of Firezone generating a replacement.
+        - name: wg-key
+          secret:
+            secretName: {{ .Values.name }}-env
+            items:
+              - key: WIREGUARD_PRIVATE_KEY
+                path: private_key
+            defaultMode: 0400
         - name: postgres-data
           hostPath:
             path: {{ printf "%s/postgres-data" .Values.firezoneDir | quote }}
@@ -93,6 +98,9 @@ spec:
           volumeMounts:
             - name: firezone-data
               mountPath: /var/firezone
+            - name: wg-key
+              mountPath: /etc/firezone/wg
+              readOnly: true
             - name: clamp-ready
               mountPath: /var/lib/clamp
               readOnly: true

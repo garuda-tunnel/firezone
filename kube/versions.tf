@@ -10,6 +10,10 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = ">= 2.30"
     }
+    wireguard = {
+      source  = "OJFord/wireguard"
+      version = ">= 0.4"
+    }
     random = {
       source  = "hashicorp/random"
       version = ">= 3.5.0"

@@ -26,6 +26,8 @@ variables {
   mtu_policy = {
     site_mtu = 1330
   }
+  # RFC 7748 §6.1 Alice key, clamped (public test vector), never a real key.
+  wireguard_private_key = "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo="
 }
 
 run "chart_resolves_from_oci" {

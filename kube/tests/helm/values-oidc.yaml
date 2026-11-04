@@ -32,6 +32,7 @@ secrets:
   cookieEncryptionSalt: fixture-encrypt
   databaseEncryptionKey: fixture-database-encryption
   databasePassword: fixture-database-password
+  wireguardPrivateKey: cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo=
 ospf: null
 oidc:
   managed: merge

@@ -27,6 +27,7 @@ secrets:
   cookieEncryptionSalt: fixture-encrypt
   databaseEncryptionKey: fixture-database-encryption
   databasePassword: fixture-database-password
+  wireguardPrivateKey: cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo=
 ospf:
   router_id: 198.51.100.22
   interfaces:

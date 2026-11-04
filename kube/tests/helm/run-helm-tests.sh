@@ -2,6 +2,7 @@
 # Helm-level tests for modules/firezone/kube.
 # helm lint + helm template diffed against tests/golden/*.yaml.
 # Update goldens with: REGEN_GOLDEN=1 ./run-helm-tests.sh
+# Needs mikefarah yq >= 4.43 (tojson(0) indent argument), plus helm.
 
 set -euo pipefail
 
@@ -9,6 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODULE_DIR="${SCRIPT_DIR}/../.."
 CHART_DIR="${MODULE_DIR}/charts/firezone"
 GOLDEN_DIR="${SCRIPT_DIR}/../golden"
+
+yq_ver="$(yq --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+' | head -1 | tr -d v || true)"
+[[ -n "${yq_ver}" && "$(printf '%s\n4.43\n' "${yq_ver}" | sort -V | head -1)" == "4.43" ]] \
+  || { echo "FAIL: mikefarah yq >= 4.43 required (found: '$(yq --version 2>&1 || true)')" >&2; exit 1; }
 
 # Resolve chart dependencies (if any) from OCI. Without this step
 # `helm template` fails with "no cached repo found" on a clean checkout.
@@ -79,7 +84,43 @@ iif_count=$(echo "${off_out}" | grep -c 'iifname "wg-firezone"' || true)
 echo "ok: mssClamp disabled-inbound: route-PMTU remains, iifname rule absent"
 
 # SF3: floating image tag must be rejected by the schema.
-schema_out="$(helm template firezone "${CHART_DIR}" --set mssClamp.image='nft:latest' 2>&1 || true)"
-echo "${schema_out}" | grep -qi 'pattern\|does not match' \
+# values-default.yaml supplies a valid wireguardPrivateKey, so only mssClamp can fail.
+schema_out="$(helm template firezone "${CHART_DIR}" -f "${SCRIPT_DIR}/values-default.yaml" --set mssClamp.image='nft:latest' 2>&1 || true)"
+echo "${schema_out}" | grep -q 'mssClamp' && echo "${schema_out}" | grep -qi 'pattern\|does not match' \
   && echo "ok: schema rejects floating image tag" \
   || { echo "FAIL: schema did NOT reject floating image tag 'nft:latest'" >&2; exit 1; }
+
+# --- WireGuard server key: file mount from the env Secret, disposable firezone-data ---
+wg_out="${mss_out}"
+dep() { echo "${wg_out}" | yq "select(.kind == \"Deployment\")" | yq "$1"; }
+
+[[ "$(echo "${wg_out}" | yq 'select(.kind == "Secret" and .metadata.name == "firezone-env") | .stringData.WIREGUARD_PRIVATE_KEY_PATH')" == "/etc/firezone/wg/private_key" ]] \
+  || { echo "FAIL: env Secret WIREGUARD_PRIVATE_KEY_PATH missing or wrong" >&2; exit 1; }
+
+[[ "$(dep '.spec.template.spec.volumes[] | select(.name == "wg-key") | .secret.secretName')" == "firezone-env" ]] \
+  || { echo "FAIL: wg-key volume must come from secret firezone-env" >&2; exit 1; }
+[[ "$(dep '.spec.template.spec.volumes[] | select(.name == "wg-key") | .secret.items | tojson(0)')" == '[{"key":"WIREGUARD_PRIVATE_KEY","path":"private_key"}]' ]] \
+  || { echo "FAIL: wg-key volume must project only WIREGUARD_PRIVATE_KEY as private_key" >&2; exit 1; }
+[[ "$(dep '.spec.template.spec.volumes[] | select(.name == "wg-key") | .secret.defaultMode')" == "0400" ]] \
+  || { echo "FAIL: wg-key volume defaultMode must be 0400" >&2; exit 1; }
+[[ "$(dep '.spec.template.spec.volumes[] | select(.name == "wg-key") | .secret | has("optional")')" == "false" ]] \
+  || { echo "FAIL: wg-key volume must not be optional" >&2; exit 1; }
+
+[[ "$(dep '.spec.template.spec.containers[] | select(.name == "firezone") | .volumeMounts[] | select(.name == "wg-key") | "\(.mountPath) \(.readOnly)"')" == "/etc/firezone/wg true" ]] \
+  || { echo "FAIL: firezone container must mount wg-key read-only at /etc/firezone/wg" >&2; exit 1; }
+[[ "$(dep '[.spec.template.spec.containers[] | select(.volumeMounts[]?.name == "wg-key") | .name] | join(",")')" == "firezone" ]] \
+  || { echo "FAIL: wg-key must be mounted in the firezone container only" >&2; exit 1; }
+
+[[ "$(dep '.spec.template.spec.volumes[] | select(.name == "firezone-data") | .emptyDir | tojson(0)')" == "{}" ]] \
+  || { echo "FAIL: firezone-data must be emptyDir: {}" >&2; exit 1; }
+[[ "$(dep '[.spec.template.spec.volumes[] | select(.name == "firezone-data" and has("hostPath"))] | length')" == "0" ]] \
+  || { echo "FAIL: firezone-data must not be a hostPath" >&2; exit 1; }
+
+# Rejected: unclamped (Firezone would advertise a wrong public key), non-canonical last char, trailing junk.
+for bad in "" "not-a-key" "dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=" "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGp=" "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo=x"; do
+  bad_out="$(helm template firezone "${CHART_DIR}" -f "${SCRIPT_DIR}/values-default.yaml" --set "secrets.wireguardPrivateKey=${bad}" 2>&1 || true)"
+  echo "${bad_out}" | grep -qi 'wireguardPrivateKey' && echo "${bad_out}" | grep -qi 'minLength\|pattern\|does not match\|length' \
+    || { echo "FAIL: schema did NOT reject wireguardPrivateKey='${bad}'" >&2; exit 1; }
+done
+
+echo "ok: wireguard key mount + firezone-data emptyDir + schema"

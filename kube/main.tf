@@ -38,7 +38,13 @@ locals {
     cookieEncryptionSalt  = coalesce(try(var.encryption_secrets.cookieEncryptionSalt, null), random_bytes.cookie_encryption_salt.base64)
     databaseEncryptionKey = coalesce(try(var.encryption_secrets.databaseEncryptionKey, null), random_bytes.database_encryption_key.base64)
     databasePassword      = coalesce(try(var.encryption_secrets.databasePassword, null), random_bytes.database_password.base64)
+    wireguardPrivateKey   = var.wireguard_private_key
   }
+}
+
+# Derives the public key only; the private key is an input, never generated here.
+resource "wireguard_asymmetric_key" "server" {
+  private_key = var.wireguard_private_key
 }
 
 resource "random_bytes" "guardian_secret_key" { length = 48 }

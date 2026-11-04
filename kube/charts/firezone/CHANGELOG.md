@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/garuda-tunnel/firezone-internal/compare/v1.4.0...v2.0.0) (2026-11-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **chart:** secrets.wireguardPrivateKey is required; firezone-data is emptyDir. Migrate the existing key first (see kube/README.md).
+
+### Features
+
+* **chart:** WireGuard server key from the env Secret ([#49](https://github.com/garuda-tunnel/firezone-internal/issues/49)) ([b327917](https://github.com/garuda-tunnel/firezone-internal/commit/b327917f0023b3980570956bee5643860399764d))
+
 ## [1.4.0](https://github.com/garuda-tunnel/firezone-internal/compare/v1.3.0...v1.4.0) (2026-11-01)
 
 

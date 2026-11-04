@@ -77,7 +77,8 @@
         "cookieSigningSalt",
         "cookieEncryptionSalt",
         "databaseEncryptionKey",
-        "databasePassword"
+        "databasePassword",
+        "wireguardPrivateKey"
       ],
       "properties": {
         "guardianSecretKey":     { "type": "string", "minLength": 1 },
@@ -86,7 +87,8 @@
         "cookieSigningSalt":     { "type": "string", "minLength": 1 },
         "cookieEncryptionSalt":  { "type": "string", "minLength": 1 },
         "databaseEncryptionKey": { "type": "string", "minLength": 1 },
-        "databasePassword":      { "type": "string", "minLength": 1 }
+        "databasePassword":      { "type": "string", "minLength": 1 },
+        "wireguardPrivateKey":   { "type": "string", "pattern": "^[ACEGIKMOQSUWYacegikmoqsuwy02468+][A-P][A-Za-z0-9+/]{39}[E-HU-Xk-n0-3][AEIMQUYcgkosw480]=$" }
       }
     },
     "ospf": {

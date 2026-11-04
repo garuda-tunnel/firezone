@@ -16,16 +16,36 @@ variable "name" {
 
 variable "firezone_dir" {
   description = <<EOT
-Host path that backs Firezone runtime state on the hub node. Mounted via
-`hostPath` with `type: DirectoryOrCreate`. Must be an absolute path. The
-data disk attached to the hub VM is expected to be mounted here so the
-state survives VM replacement.
+Host path that backs the PostgreSQL data (`postgres-data`) on the hub node.
+Mounted via `hostPath` with `type: DirectoryOrCreate`. Must be an absolute
+path. The data disk attached to the hub VM is expected to be mounted here so
+the database survives VM replacement. The WireGuard server key is not stored
+here, see `wireguard_private_key`.
 EOT
   type        = string
 
   validation {
     condition     = can(regex("^/", var.firezone_dir))
     error_message = "firezone_dir must be an absolute path."
+  }
+}
+
+variable "wireguard_private_key" {
+  description = <<EOT
+Required. WireGuard server private key as produced by `wg genkey` (clamped,
+base64, 32 bytes). Comes from the
+caller's secret store (e.g. sops) or a key generated once. Losing it
+invalidates every issued client config. Upgrading from 1.x: see README
+"Migrating from 1.x".
+EOT
+  type        = string
+  sensitive   = true
+  nullable    = false
+
+  # Clamped: Firezone's Wireguardex does not clamp when deriving the advertised public key; the kernel does.
+  validation {
+    condition     = can(regex("^[ACEGIKMOQSUWYacegikmoqsuwy02468+][A-P][A-Za-z0-9+/]{39}[E-HU-Xk-n0-3][AEIMQUYcgkosw480]=$", var.wireguard_private_key))
+    error_message = "wireguard_private_key must be a WireGuard private key as produced by `wg genkey` — 44-char base64 of a clamped 32-byte key, no trailing newline."
   }
 }
 
@@ -273,7 +293,7 @@ variable "configmaps" {
 variable "chart_version" {
   description = "Pinned OCI chart version (exact semver). Bumped in lockstep with Chart.yaml by release-please."
   type        = string
-  default     = "1.4.0" # x-release-please-version
+  default     = "2.0.0" # x-release-please-version
 
   validation {
     condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", var.chart_version))

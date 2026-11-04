@@ -33,6 +33,10 @@ stringData:
   COOKIE_SIGNING_SALT: "fixture-sign"
   COOKIE_ENCRYPTION_SALT: "fixture-encrypt"
   DATABASE_ENCRYPTION_KEY: "fixture-database-encryption"
+  # WireGuard server key: Firezone reads it from the file the wg-key volume
+  # projects out of this Secret (see deployment.yaml).
+  WIREGUARD_PRIVATE_KEY: "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo="
+  WIREGUARD_PRIVATE_KEY_PATH: "/etc/firezone/wg/private_key"
   # Postgres connection. The chart provisions a single postgres container
   # in the same pod, reachable on 127.0.0.1 since both containers share
   # the pod's network namespace.
@@ -82,9 +86,8 @@ metadata:
     app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 spec:
-  # Recreate: postgres lockfiles and firezone runtime state in the
-  # hostPath volume do not tolerate parallel pods, which RollingUpdate
-  # would briefly create on a replacement.
+  # Recreate: postgres lockfiles in the hostPath volume do not tolerate
+  # parallel pods, which RollingUpdate would briefly create on a replacement.
   strategy:
     type: Recreate
   replicas: 1
@@ -101,7 +104,7 @@ spec:
         app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
       annotations:
-        checksum/env-secret: 6e903760aaab46ca687f9966327a2ec1c3485c9a4d1ee68efb6182e1b02d4555
+        checksum/env-secret: 24fe149479587497277444761082ae4f83c4b4c6854a6f866ea9caab6b509386
     spec:
       restartPolicy: Always
       # Match the existing docker-compose stack's sysctls. All three are
@@ -119,13 +122,19 @@ spec:
           - name: net.ipv4.conf.all.rp_filter
             value: "2"
       volumes:
-        # Persistent runtime state for both the Phoenix application and
-        # postgres. Backed by the YC data disk re-attached after VM
-        # replacement.
+        # Disposable Phoenix state only (SAML self-signed cert, telemetry id).
+        # The WireGuard server key lives in the env Secret, not here.
         - name: firezone-data
-          hostPath:
-            path: "/opt/garuda/firezone/firezone-data"
-            type: DirectoryOrCreate
+          emptyDir: {}
+        # Required (no `optional`): a missing key keeps the pod from starting
+        # instead of Firezone generating a replacement.
+        - name: wg-key
+          secret:
+            secretName: firezone-env
+            items:
+              - key: WIREGUARD_PRIVATE_KEY
+                path: private_key
+            defaultMode: 0400
         - name: postgres-data
           hostPath:
             path: "/opt/garuda/firezone/postgres-data"
@@ -156,6 +165,9 @@ spec:
           volumeMounts:
             - name: firezone-data
               mountPath: /var/firezone
+            - name: wg-key
+              mountPath: /etc/firezone/wg
+              readOnly: true
             - name: clamp-ready
               mountPath: /var/lib/clamp
               readOnly: true
