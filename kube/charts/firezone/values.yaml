@@ -57,7 +57,9 @@ secrets:
   cookieEncryptionSalt: "placeholder_cookieencryption"
   databaseEncryptionKey: "placeholder_dbencryption"
   databasePassword: "placeholder_dbpassword"
-  # Required: WireGuard server private key (base64), supplied by the consumer module.
+  # Required: WireGuard server private key, supplied by the consumer module. Must be
+  # clamped (`wg genkey` output): Firezone advertises a public key derived without
+  # clamping, so an unclamped key breaks every client config. The schema enforces it.
   wireguardPrivateKey: ""
 # ospf: null — kept for back-compat; ignored by chart (FRR sidecar removed
 # in Phase 4+5 Decision #5; Garuda injects routing via annotation layer).
