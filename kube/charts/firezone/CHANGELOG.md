@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/garuda-tunnel/firezone-internal/compare/v2.0.1...v3.0.0) (2026-11-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* removed inputs firezone_dir, postgres_image, and encryption_secrets.databasePassword. Callers must supply the new required database_secret_name input referencing a Secret with host, port, dbname, username, and password keys. Migrate the database before upgrading and preserve databaseEncryptionKey and the WireGuard key.
+
+### Features
+
+* consume Postgres via database_secret_name contract ([#57](https://github.com/garuda-tunnel/firezone-internal/issues/57)) ([162ff7f](https://github.com/garuda-tunnel/firezone-internal/commit/162ff7fb8d45caf87838c62a0fdd38c05d4d6c3c))
+
 ## [2.0.1](https://github.com/garuda-tunnel/firezone-internal/compare/v2.0.0...v2.0.1) (2026-11-04)
 
 
