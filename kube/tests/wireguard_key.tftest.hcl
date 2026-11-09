@@ -2,14 +2,14 @@ mock_provider "helm" {}
 mock_provider "kubernetes" {}
 
 variables {
-  namespace      = "garuda"
-  name           = "firezone"
-  firezone_dir   = "/opt/garuda/firezone"
-  firezone_image = "ghcr.io/alexmkx/garuda-firezone:latest"
-  server_fqdn    = "hub.example.net"
-  admin_email    = "admin@example.net"
-  admin_password = "fixture-password"
-  client_subnet  = "198.51.100.128/25"
+  namespace            = "garuda"
+  name                 = "firezone"
+  database_secret_name = "postgres-app"
+  firezone_image       = "ghcr.io/alexmkx/garuda-firezone:latest"
+  server_fqdn          = "hub.example.net"
+  admin_email          = "admin@example.net"
+  admin_password       = "fixture-password"
+  client_subnet        = "198.51.100.128/25"
   gateway_ref = {
     name      = "platform-gateway"
     namespace = "gateway-system"

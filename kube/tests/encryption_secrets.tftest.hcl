@@ -2,14 +2,14 @@ mock_provider "helm" {}
 mock_provider "kubernetes" {}
 
 variables {
-  namespace           = "garuda"
-  name                = "firezone"
-  firezone_dir        = "/opt/garuda/firezone"
-  firezone_image      = "ghcr.io/alexmkx/garuda-firezone:latest"
-  server_fqdn         = "hub.example.net"
-  admin_email         = "admin@example.net"
-  admin_password      = "fixture-password"
-  client_subnet       = "198.51.100.128/25"
+  namespace            = "garuda"
+  name                 = "firezone"
+  database_secret_name = "postgres-app"
+  firezone_image       = "ghcr.io/alexmkx/garuda-firezone:latest"
+  server_fqdn          = "hub.example.net"
+  admin_email          = "admin@example.net"
+  admin_password       = "fixture-password"
+  client_subnet        = "198.51.100.128/25"
   gateway_ref = {
     name      = "platform-gateway"
     namespace = "gateway-system"
@@ -33,7 +33,6 @@ run "generated_path_includes_all_secret_keys" {
         "cookieSigningSalt",
         "cookieEncryptionSalt",
         "databaseEncryptionKey",
-        "databasePassword",
       ] : contains(keys(yamldecode(helm_release.firezone.values[0]).secrets), key)
     ])
     error_message = "generated values must include all Firezone encryption secret keys"
@@ -51,7 +50,6 @@ run "full_override_propagates_literal_values" {
       cookieSigningSalt     = "RESTORED-cookieSigningSalt"
       cookieEncryptionSalt  = "RESTORED-cookieEncryptionSalt"
       databaseEncryptionKey = "RESTORED-databaseEncryptionKey"
-      databasePassword      = "RESTORED-databasePassword"
     }
   }
 
@@ -65,10 +63,6 @@ run "full_override_propagates_literal_values" {
     error_message = "databaseEncryptionKey must use the override value"
   }
 
-  assert {
-    condition     = yamldecode(helm_release.firezone.values[0]).secrets.databasePassword == "RESTORED-databasePassword"
-    error_message = "databasePassword must use the override value"
-  }
 }
 
 run "partial_override_only_restores_supplied_values" {
@@ -77,18 +71,12 @@ run "partial_override_only_restores_supplied_values" {
   variables {
     encryption_secrets = {
       databaseEncryptionKey = "RESTORED-databaseEncryptionKey"
-      databasePassword      = "RESTORED-databasePassword"
     }
   }
 
   assert {
     condition     = yamldecode(helm_release.firezone.values[0]).secrets.databaseEncryptionKey == "RESTORED-databaseEncryptionKey"
     error_message = "databaseEncryptionKey must use the partial override value"
-  }
-
-  assert {
-    condition     = yamldecode(helm_release.firezone.values[0]).secrets.databasePassword == "RESTORED-databasePassword"
-    error_message = "databasePassword must use the partial override value"
   }
 
   assert {

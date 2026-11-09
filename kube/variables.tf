@@ -14,19 +14,14 @@ variable "name" {
   }
 }
 
-variable "firezone_dir" {
-  description = <<EOT
-Host path that backs the PostgreSQL data (`postgres-data`) on the hub node.
-Mounted via `hostPath` with `type: DirectoryOrCreate`. Must be an absolute
-path. The data disk attached to the hub VM is expected to be mounted here so
-the database survives VM replacement. The WireGuard server key is not stored
-here, see `wireguard_private_key`.
-EOT
+variable "database_secret_name" {
+  description = "Existing Secret in the Firezone namespace with host, port, dbname, username and password keys. The role must own the database and accept password authentication over plain TCP."
   type        = string
+  nullable    = false
 
   validation {
-    condition     = can(regex("^/", var.firezone_dir))
-    error_message = "firezone_dir must be an absolute path."
+    condition     = length(var.database_secret_name) <= 253 && can(regex("^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$", var.database_secret_name))
+    error_message = "database_secret_name must be a non-empty DNS-1123 subdomain (at most 253 characters, labels at most 63 characters)."
   }
 }
 
@@ -53,12 +48,6 @@ variable "firezone_image" {
   description = "Image reference for the firezone Phoenix application container. Empty ⇒ use the chart's pinned digest."
   type        = string
   default     = ""
-}
-
-variable "postgres_image" {
-  description = "Image reference for the postgres container. Defaults to upstream postgres:15."
-  type        = string
-  default     = "postgres:15"
 }
 
 variable "frr_image" {
@@ -122,7 +111,6 @@ EOT
     cookieSigningSalt     = optional(string)
     cookieEncryptionSalt  = optional(string)
     databaseEncryptionKey = optional(string)
-    databasePassword      = optional(string)
   })
   default   = {}
   sensitive = true
@@ -364,5 +352,4 @@ variable "firezone_client_mtu" {
     error_message = "firezone_client_mtu must be between 1280 and 1420."
   }
 }
-
 

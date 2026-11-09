@@ -33,8 +33,8 @@ the chart's mss-clamp nftables ruleset, and the runtime (non-EOL Alpine).
 The same checks run in CI (`image-compat` job) against every pushed dev image.
 
 Deploys the Firezone application stack as one multi-container Kubernetes
-Deployment with PostgreSQL data on a hostPath volume backed by the YC
-data disk attached to the hub VM. The WireGuard server key is a required
+Deployment using an external PostgreSQL database. The chart does not provision
+database containers or storage. The WireGuard server key is a required
 input, shipped to the pod in the env Secret and mounted read-only as a
 file.
 
@@ -56,14 +56,14 @@ now injects fabric-level routing via the annotation layer).
 |---|---|---|
 | `namespace` | yes | Existing namespace, typically `module.garuda_k8s_hub.namespace`. |
 | `name` | no | Deployment name. Default `firezone`. |
-| `firezone_dir` | yes | Absolute host path that backs the PostgreSQL data (`postgres-data`) via hostPath. Holds nothing else since 2.0.0. |
+| `database_secret_name` | yes | Existing Secret in the Firezone namespace with keys `host`, `port`, `dbname`, `username`, `password` (CNPG `<cluster>-app` shape). Non-empty DNS-1123 subdomain. The role must own the database and accept password authentication over plain TCP; SSL stays off by default. |
 | `wireguard_private_key` | yes (sensitive) | WireGuard server private key from `wg genkey` (44-char base64 of a clamped 32-byte key, no trailing newline; `trimspace()` a `file()` read). Supply it from the caller's secret store (sops) or a key generated once. Losing it invalidates every issued client config. See [Migrating from 1.x](#migrating-from-1x). |
 | `firezone_image` | no | Image reference for the firezone application container. Empty (default) uses the chart's pinned digest. |
-| `postgres_image` | no | Default `postgres:15`. |
 | `frr_image` | no | Inert (deprecated). Kept for back-compat; ignored by chart. See Phase 4+5 Decision #5. |
 | `server_fqdn` | yes | External FQDN; both `EXTERNAL_URL` and IngressRoute Host match. |
 | `admin_email` | yes | Initial admin email (`DEFAULT_ADMIN_EMAIL`). |
 | `admin_password` | yes (sensitive) | Initial admin password (`DEFAULT_ADMIN_PASSWORD`). |
+| `encryption_secrets` | no (sensitive) | Optional overrides for `guardianSecretKey`, `secretKeyBase`, `liveViewSigningSalt`, `cookieSigningSalt`, `cookieEncryptionSalt`, `databaseEncryptionKey`. Preserve these when restoring a database; connection credentials belong only to `database_secret_name`. |
 | `client_subnet` | yes | CIDR for WireGuard clients (`WIREGUARD_IPV4_NETWORK`). |
 | `wg_listen_port` | no | UDP port firezone WireGuard listens on. Default `51620`. |
 | `gateway_ref` | yes | Parent Gateway reference object (`{name, namespace}`) for the HTTPRoute. Supplied by the platform `k8s_gateway_bootstrap` module. |
@@ -101,20 +101,20 @@ via `providers = {}`).
 
 ```hcl
 module "firezone_kube" {
-  source = "git::https://github.com/garuda-tunnel/garuda-firezone.git//kube?ref=v0.2.0"
+  source = "git::https://github.com/garuda-tunnel/garuda-firezone.git//kube?ref=v3.0.0"
 
   providers = {
     helm       = helm.hub
     kubernetes = kubernetes.hub
   }
 
-  namespace           = module.garuda_k8s_hub.namespace
-  firezone_dir        = local.firezone_facts.directory
-  firezone_image      = var.fz_firezone_image
-  server_fqdn         = local.firezone_facts.server_name
-  admin_email         = local.firezone_facts.default_admin_email
-  admin_password      = local.firezone_facts.admin_password
-  client_subnet       = local.firezone_facts.client_subnet
+  namespace            = module.garuda_k8s_hub.namespace
+  database_secret_name = "postgres-app"
+  firezone_image       = var.fz_firezone_image
+  server_fqdn          = local.firezone_facts.server_name
+  admin_email          = local.firezone_facts.default_admin_email
+  admin_password       = local.firezone_facts.admin_password
+  client_subnet        = local.firezone_facts.client_subnet
 
   wireguard_private_key = local.secrets.firezone_wireguard_private_key
 
@@ -130,7 +130,26 @@ module "firezone_kube" {
 }
 ```
 
+## Migrating from 2.x to 3.x
+
+This is a breaking upgrade: `firezone_dir`, `postgres_image` and
+`encryption_secrets.databasePassword` are removed. Supply the new required
+`database_secret_name`; for direct chart consumers, use `databaseSecretName`
+instead of `firezoneDir`, `images.postgres` or `secrets.databasePassword`.
+Both Firezone and OIDC release tooling read the five connection keys from that
+Secret. The database owner must be able to create the trusted extensions
+`pgcrypto`, `btree_gist` and `citext` (PostgreSQL 13 or newer).
+
+Migrate the existing database before switching the app to v3; preserve
+`databaseEncryptionKey`, the other application encryption secrets, and
+`wireguard_private_key`. Do not point an existing installation at an empty
+database. The old hostPath data is not mounted or modified by v3 and must not
+be deleted during the migration. Follow the CNPG migration runbook:
+[`docs/operations/operator-runbook-cnpg-migration.md`](../docs/operations/operator-runbook-cnpg-migration.md).
+
 ## Migrating from 1.x
+
+First migrate to 2.x before following the v3 database migration above.
 
 In 1.x the server key lived in `<firezone_dir>/firezone-data/private_key`,
 generated by Firezone on first start. From 2.0.0 the key is the required input
@@ -144,7 +163,7 @@ carrying the key over would rotate it and break every issued client config.
 4. Confirm `wireguard_public_key` equals the server public key in an existing
    client config.
 
-`firezone_dir` now holds only `postgres-data`; after a successful migration
+In 2.x, `firezone_dir` holds only `postgres-data`; after a successful migration
 the old `firezone-data` subdirectory can be removed.
 
 Generating a fresh key instead invalidates every issued client config. For a

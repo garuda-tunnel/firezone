@@ -6,8 +6,8 @@ metadata:
   labels:
     {{- include "firezone.labels" . | nindent 4 }}
 spec:
-  # Recreate: postgres lockfiles in the hostPath volume do not tolerate
-  # parallel pods, which RollingUpdate would briefly create on a replacement.
+  # Recreate: WireGuard hostPort and the single server key require one server
+  # pod at a time, including during replacement.
   strategy:
     type: Recreate
   replicas: 1
@@ -63,10 +63,6 @@ spec:
               - key: WIREGUARD_PRIVATE_KEY
                 path: private_key
             defaultMode: 0400
-        - name: postgres-data
-          hostPath:
-            path: {{ printf "%s/postgres-data" .Values.firezoneDir | quote }}
-            type: DirectoryOrCreate
         {{- if .Values.oidc.providers }}
         - name: oidc-reconcile-script
           configMap:
@@ -78,6 +74,8 @@ spec:
         - name: firezone
           image: {{ .Values.images.firezone | default (printf "ghcr.io/garuda-tunnel/garuda-firezone:%s" .Chart.Version) | quote }}
           imagePullPolicy: IfNotPresent
+          env:
+            {{- include "firezone.databaseEnv" . | trim | nindent 12 }}
           envFrom:
             - secretRef:
                 name: {{ .Values.name }}-env
@@ -112,29 +110,13 @@ spec:
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "SYS_MODULE"]
-        - name: postgres
-          image: {{ .Values.images.postgres | quote }}
-          imagePullPolicy: IfNotPresent
-          envFrom:
-            - secretRef:
-                name: {{ .Values.name }}-env
-          volumeMounts:
-            - name: postgres-data
-              mountPath: /var/lib/postgresql/data
-          readinessProbe:
-            exec:
-              command:
-                - /usr/bin/pg_isready
-                - -U
-                - postgres
-            initialDelaySeconds: 5
-            periodSeconds: 10
         {{- if .Values.oidc.providers }}
         - name: oidc-reconcile
           image: {{ .Values.images.oidcReconcile | quote }}
           imagePullPolicy: IfNotPresent
           command: ["python3", "/opt/oidc-reconcile/oidc_reconcile.py"]
           env:
+            {{- include "firezone.databaseEnv" . | trim | nindent 12 }}
             - name: OIDC_MANAGED
               value: {{ .Values.oidc.managed | quote }}
             - name: FZ_API_URL
@@ -143,7 +125,7 @@ spec:
               value: "/app"
           # firezone-env is REQUIRED, not over-broad: the nsenter-launched
           # bin/create-api-token (eval mode) inherits this env and needs
-          # DATABASE_*/secrets to spawn a BEAM that reaches Postgres.
+          # application secrets as well as the connection env above to reach Postgres.
           envFrom:
             - secretRef:
                 name: {{ .Values.name }}-env

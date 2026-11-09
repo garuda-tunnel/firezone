@@ -21,6 +21,42 @@ yq_ver="$(yq --version 2>/dev/null | grep -oE 'v?[0-9]+\.[0-9]+' | head -1 | tr 
 # via `dependency_update = true` on helm_release.
 helm dependency update "${CHART_DIR}"
 
+# A missing/empty connection Secret name must fail before any workload renders.
+for missing in null '""'; do
+  if schema_out="$(helm template firezone "${CHART_DIR}" -f "${SCRIPT_DIR}/values-default.yaml" --set-json "databaseSecretName=${missing}" 2>&1)"; then
+    echo "FAIL: schema accepted missing/empty databaseSecretName" >&2
+    exit 1
+  fi
+  [[ "${schema_out}" == *databaseSecretName* ]] \
+    || { echo "FAIL: render failed for a reason other than databaseSecretName: ${schema_out}" >&2; exit 1; }
+done
+echo "ok: schema rejects missing/empty databaseSecretName"
+
+# Both the server and OIDC release tooling need the same connection contract.
+for scenario in default oidc; do
+  db_out="$(helm template firezone "${CHART_DIR}" -f "${SCRIPT_DIR}/values-${scenario}.yaml")"
+  db_deployment="$(echo "${db_out}" | yq 'select(.kind == "Deployment")')"
+  db_secret="$(echo "${db_out}" | yq 'select(.kind == "Secret" and .metadata.name == "firezone-env")')"
+  containers=firezone
+  [[ "${scenario}" != oidc ]] || containers="firezone oidc-reconcile"
+  for container in ${containers}; do
+    for pair in HOST:host PORT:port NAME:dbname USER:username PASSWORD:password; do
+      actual="$(echo "${db_out}" | yq "select(.kind == \"Deployment\") | .spec.template.spec.containers[] | select(.name == \"${container}\") | .env[] | select(.name == \"DATABASE_${pair%%:*}\") | .valueFrom.secretKeyRef | tojson(0)")"
+      [[ "${actual}" == "{\"name\":\"postgres-app\",\"key\":\"${pair#*:}\"}" ]] \
+        || { echo "FAIL: ${container} DATABASE_${pair%%:*} must reference postgres-app/${pair#*:}: ${actual}" >&2; exit 1; }
+    done
+  done
+  [[ "$(echo "${db_deployment}" | yq '[.spec.template.spec.containers[] | select(.name == "postgres")] | length')" == 0 ]] \
+    || { echo "FAIL: embedded postgres container rendered" >&2; exit 1; }
+  [[ "$(echo "${db_deployment}" | yq '[.spec.template.spec.volumes[] | select(.name == "postgres-data")] | length')" == 0 ]] \
+    || { echo "FAIL: postgres-data volume rendered" >&2; exit 1; }
+  [[ "$(echo "${db_secret}" | yq '.stringData.DATABASE_ENCRYPTION_KEY')" == fixture-database-encryption ]] \
+    || { echo "FAIL: application database encryption key changed" >&2; exit 1; }
+  [[ "$(echo "${db_secret}" | yq '.stringData | keys | map(select(test("^(DATABASE_(HOST|PORT|NAME|USER|PASSWORD)|POSTGRES_.*)$"))) | length')" == 0 ]] \
+    || { echo "FAIL: connection credentials leaked into firezone-env" >&2; exit 1; }
+done
+echo "ok: external database Secret contract"
+
 for scenario in default with-ospf oidc; do
   values_file="${SCRIPT_DIR}/values-${scenario}.yaml"
   helm lint "${CHART_DIR}" -f "${values_file}"

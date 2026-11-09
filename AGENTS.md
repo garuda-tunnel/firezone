@@ -34,7 +34,8 @@ its chart is `oci://ghcr.io/garuda-tunnel/charts/firezone`. The chart `version` 
 
 ## Firezone-specific notes
 
-- PostgreSQL is a hard dependency. The chart always deploys postgres:15 as a subchart.
+- PostgreSQL is an external dependency supplied through `database_secret_name`
+  (namespace-local Secret keys: `host`, `port`, `dbname`, `username`, `password`).
   The `oidcReconcile` literal in `values.yaml` must not be templated or made optional —
   it is a Firezone API invariant.
 - `NET_ADMIN` and `SYS_MODULE` capabilities are app-intrinsic (Firezone loads the

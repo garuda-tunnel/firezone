@@ -37,16 +37,6 @@ stringData:
   # projects out of this Secret (see deployment.yaml).
   WIREGUARD_PRIVATE_KEY: "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo="
   WIREGUARD_PRIVATE_KEY_PATH: "/etc/firezone/wg/private_key"
-  # Postgres connection. The chart provisions a single postgres container
-  # in the same pod, reachable on 127.0.0.1 since both containers share
-  # the pod's network namespace.
-  DATABASE_HOST: "127.0.0.1"
-  DATABASE_NAME: "firezone"
-  DATABASE_USER: "postgres"
-  DATABASE_PASSWORD: "fixture-database-password"
-  POSTGRES_DB: "firezone"
-  POSTGRES_USER: "postgres"
-  POSTGRES_PASSWORD: "fixture-database-password"
 
 ---
 # Source: firezone/templates/service.yaml
@@ -86,8 +76,8 @@ metadata:
     app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 spec:
-  # Recreate: postgres lockfiles in the hostPath volume do not tolerate
-  # parallel pods, which RollingUpdate would briefly create on a replacement.
+  # Recreate: WireGuard hostPort and the single server key require one server
+  # pod at a time, including during replacement.
   strategy:
     type: Recreate
   replicas: 1
@@ -104,7 +94,7 @@ spec:
         app.kubernetes.io/part-of: garuda
         garuda.managed-by: helm
       annotations:
-        checksum/env-secret: 24fe149479587497277444761082ae4f83c4b4c6854a6f866ea9caab6b509386
+        checksum/env-secret: 07b9e02d3b32216bcf78775fc8012bfc2ab6582417e7c6f781d3c7c1ac6a8250
     spec:
       restartPolicy: Always
       # Match the existing docker-compose stack's sysctls. All three are
@@ -135,16 +125,38 @@ spec:
               - key: WIREGUARD_PRIVATE_KEY
                 path: private_key
             defaultMode: 0400
-        - name: postgres-data
-          hostPath:
-            path: "/opt/garuda/firezone/postgres-data"
-            type: DirectoryOrCreate
         - name: clamp-ready
           emptyDir: {}
       containers:
         - name: firezone
           image: "ghcr.io/garuda-tunnel/garuda-firezone:latest"
           imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "host"
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "port"
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "dbname"
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "username"
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "password"
           envFrom:
             - secretRef:
                 name: firezone-env
@@ -179,23 +191,6 @@ spec:
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "SYS_MODULE"]
-        - name: postgres
-          image: "postgres:15"
-          imagePullPolicy: IfNotPresent
-          envFrom:
-            - secretRef:
-                name: firezone-env
-          volumeMounts:
-            - name: postgres-data
-              mountPath: /var/lib/postgresql/data
-          readinessProbe:
-            exec:
-              command:
-                - /usr/bin/pg_isready
-                - -U
-                - postgres
-            initialDelaySeconds: 5
-            periodSeconds: 10
         - name: mss-clamp
           # Empty image = reuse firezone image (ships nftables). Non-empty must be
           # digest-pinned; schema pattern "^$|@sha256:[a-f0-9]{64}$" enforces this.

@@ -56,16 +56,6 @@ stringData:
   # projects out of this Secret (see deployment.yaml).
   WIREGUARD_PRIVATE_KEY: "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo="
   WIREGUARD_PRIVATE_KEY_PATH: "/etc/firezone/wg/private_key"
-  # Postgres connection. The chart provisions a single postgres container
-  # in the same pod, reachable on 127.0.0.1 since both containers share
-  # the pod's network namespace.
-  DATABASE_HOST: "127.0.0.1"
-  DATABASE_NAME: "firezone"
-  DATABASE_USER: "postgres"
-  DATABASE_PASSWORD: "fixture-database-password"
-  POSTGRES_DB: "firezone"
-  POSTGRES_USER: "postgres"
-  POSTGRES_PASSWORD: "fixture-database-password"
 
 ---
 # Source: firezone/templates/oidc-reconcile-configmap.yaml
@@ -93,7 +83,8 @@ data:
     
     Spike-confirmed (docs/artifacts/2026-06-02-firezone-oidc-spike.md):
     nsenter --mount --net; create-api-token uses eval (DB env inherited from
-    the sidecar's envFrom -env, RELEASE_COOKIE from /app/releases/COOKIE);
+    the sidecar's database Secret refs, app secrets from envFrom -env,
+    RELEASE_COOKIE from /app/releases/COOKIE);
     GET /v0/configuration returns client_secret verbatim; PID via /proc scan
     for beam.smp.
     """
@@ -354,8 +345,8 @@ metadata:
     app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
 spec:
-  # Recreate: postgres lockfiles in the hostPath volume do not tolerate
-  # parallel pods, which RollingUpdate would briefly create on a replacement.
+  # Recreate: WireGuard hostPort and the single server key require one server
+  # pod at a time, including during replacement.
   strategy:
     type: Recreate
   replicas: 1
@@ -373,9 +364,9 @@ spec:
         garuda.managed-by: helm
         net.garuda-tunnel/profile: oidc-guest
       annotations:
-        checksum/env-secret: 24fe149479587497277444761082ae4f83c4b4c6854a6f866ea9caab6b509386
+        checksum/env-secret: 07b9e02d3b32216bcf78775fc8012bfc2ab6582417e7c6f781d3c7c1ac6a8250
         checksum/oidc-secret: df06c5771bfee8f263765a4ba98491e51bf02916a272368268bc857f3aa895b8
-        checksum/oidc-reconcile: 5a606f9ad55bb3afe06a94781ddf0090d68568f8474c5faa42e9b3dc5e3bc0a0
+        checksum/oidc-reconcile: b0c0bad70b4113db7d715b9aa2e852544e15565f941a793031617a426d017c37
         net.garuda-tunnel/router-id: 198.51.100.22
     spec:
       restartPolicy: Always
@@ -408,10 +399,6 @@ spec:
               - key: WIREGUARD_PRIVATE_KEY
                 path: private_key
             defaultMode: 0400
-        - name: postgres-data
-          hostPath:
-            path: "/opt/garuda/firezone/postgres-data"
-            type: DirectoryOrCreate
         - name: oidc-reconcile-script
           configMap:
             name: firezone-oidc-reconcile
@@ -421,6 +408,32 @@ spec:
         - name: firezone
           image: "ghcr.io/garuda-tunnel/garuda-firezone:latest"
           imagePullPolicy: IfNotPresent
+          env:
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "host"
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "port"
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "dbname"
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "username"
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "password"
           envFrom:
             - secretRef:
                 name: firezone-env
@@ -455,28 +468,36 @@ spec:
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "SYS_MODULE"]
-        - name: postgres
-          image: "postgres:15"
-          imagePullPolicy: IfNotPresent
-          envFrom:
-            - secretRef:
-                name: firezone-env
-          volumeMounts:
-            - name: postgres-data
-              mountPath: /var/lib/postgresql/data
-          readinessProbe:
-            exec:
-              command:
-                - /usr/bin/pg_isready
-                - -U
-                - postgres
-            initialDelaySeconds: 5
-            periodSeconds: 10
         - name: oidc-reconcile
           image: "python:3.12-slim-bookworm"
           imagePullPolicy: IfNotPresent
           command: ["python3", "/opt/oidc-reconcile/oidc_reconcile.py"]
           env:
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "host"
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "port"
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "dbname"
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "username"
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "postgres-app"
+                  key: "password"
             - name: OIDC_MANAGED
               value: "merge"
             - name: FZ_API_URL
@@ -485,7 +506,7 @@ spec:
               value: "/app"
           # firezone-env is REQUIRED, not over-broad: the nsenter-launched
           # bin/create-api-token (eval mode) inherits this env and needs
-          # DATABASE_*/secrets to spawn a BEAM that reaches Postgres.
+          # application secrets as well as the connection env above to reach Postgres.
           envFrom:
             - secretRef:
                 name: firezone-env

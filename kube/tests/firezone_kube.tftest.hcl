@@ -2,14 +2,14 @@ mock_provider "helm" {}
 mock_provider "kubernetes" {}
 
 variables {
-  namespace           = "garuda"
-  name                = "firezone"
-  firezone_dir        = "/opt/garuda/firezone"
-  firezone_image      = "ghcr.io/alexmkx/garuda-firezone:latest"
-  server_fqdn         = "hub.example.net"
-  admin_email         = "admin@example.net"
-  admin_password      = "fixture-password"
-  client_subnet       = "198.51.100.128/25"
+  database_secret_name = "postgres-app"
+  namespace            = "garuda"
+  name                 = "firezone"
+  firezone_image       = "ghcr.io/alexmkx/garuda-firezone:latest"
+  server_fqdn          = "hub.example.net"
+  admin_email          = "admin@example.net"
+  admin_password       = "fixture-password"
+  client_subnet        = "198.51.100.128/25"
   gateway_ref = {
     name      = "platform-gateway"
     namespace = "gateway-system"
@@ -21,7 +21,6 @@ variables {
     cookieSigningSalt     = "fixture-sign"
     cookieEncryptionSalt  = "fixture-encrypt"
     databaseEncryptionKey = "fixture-database-encryption"
-    databasePassword      = "fixture-database-password"
   }
   mtu_policy = {
     site_mtu = 1330
@@ -47,16 +46,55 @@ run "chart_resolves_from_oci" {
   }
 }
 
-# OpenTofu's yamlencode emits quoted block-style YAML ("key": "value"),
-# so substrings below match that form. See modules/garuda_k8s/tests for
-# the precedent.
-run "values_include_firezone_dir_and_server_fqdn" {
+# Database connection values belong to the namespace-local contract Secret,
+# never to the application release or its generated encryption secrets.
+run "database_secret_name_propagates" {
   command = plan
 
   assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"firezoneDir\": \"/opt/garuda/firezone\"")
-    error_message = "rendered values must include firezoneDir"
+    condition     = try(yamldecode(helm_release.firezone.values[0]).databaseSecretName == "postgres-app", false)
+    error_message = "databaseSecretName must reference the supplied contract Secret"
   }
+}
+
+run "database_secret_name_required" {
+  command = plan
+
+  variables {
+    database_secret_name = ""
+  }
+
+  expect_failures = [var.database_secret_name]
+}
+
+run "database_secret_name_rejects_invalid_dns_name" {
+  command = plan
+
+  variables {
+    database_secret_name = "Postgres_app"
+  }
+
+  expect_failures = [var.database_secret_name]
+}
+
+run "values_have_no_embedded_postgres" {
+  command = plan
+
+  assert {
+    condition = (
+      !contains(keys(yamldecode(helm_release.firezone.values[0])), "firezoneDir") &&
+      !contains(keys(yamldecode(helm_release.firezone.values[0]).images), "postgres") &&
+      !contains(keys(yamldecode(helm_release.firezone.values[0]).secrets), "databasePassword")
+    )
+    error_message = "application values must not provision Postgres storage, image or password"
+  }
+}
+
+# OpenTofu's yamlencode emits quoted block-style YAML ("key": "value"),
+# so substrings below match that form. See modules/garuda_k8s/tests for
+# the precedent.
+run "values_include_server_fqdn" {
+  command = plan
 
   assert {
     condition     = strcontains(helm_release.firezone.values[0], "\"serverFqdn\": \"hub.example.net\"")
@@ -180,16 +218,6 @@ run "outputs_match_inputs" {
     condition     = output.service_url == "https://hub.example.net"
     error_message = "output.service_url must be https://${var.server_fqdn}"
   }
-}
-
-run "reject_relative_firezone_dir" {
-  command = plan
-
-  variables {
-    firezone_dir = "relative/path"
-  }
-
-  expect_failures = [var.firezone_dir]
 }
 
 run "reject_invalid_admin_email" {
@@ -354,25 +382,19 @@ run "mtu_policy_disabled_propagates" {
 }
 
 # Vanilla-guest contract: images.firezone empty → chart's pinned digest wins;
-# external images (postgres, oidcReconcile) always present; no frr key ever
+# external image oidcReconcile always present; no frr key ever
 # emitted (frr-sidecar was removed in Phase 4+5 Decision #5).
 run "empty_firstparty_images_omit_keys" {
   command = plan
 
   variables {
     firezone_image       = ""
-    postgres_image       = "postgres:15"
     oidc_reconcile_image = "python:3.12-slim-bookworm"
   }
 
   assert {
     condition     = !strcontains(helm_release.firezone.values[0], "garuda-firezone@sha256:")
     error_message = "rendered values must NOT contain a garuda-firezone digest override when firezone_image is empty"
-  }
-
-  assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"postgres\":")
-    error_message = "rendered values must always contain the external postgres key"
   }
 
   assert {
@@ -406,7 +428,6 @@ run "nonempty_firezone_image_overrides" {
 
   variables {
     firezone_image       = "ghcr.io/garuda-tunnel/garuda-firezone@sha256:2222222222222222222222222222222222222222222222222222222222222222"
-    postgres_image       = "postgres:15"
     oidc_reconcile_image = "python:3.12-slim-bookworm"
   }
 

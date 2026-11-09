@@ -9,7 +9,8 @@ Deployment does not restart-loop it. Re-runs on every pod recreation.
 
 Spike-confirmed (docs/artifacts/2026-06-02-firezone-oidc-spike.md):
 nsenter --mount --net; create-api-token uses eval (DB env inherited from
-the sidecar's envFrom -env, RELEASE_COOKIE from /app/releases/COOKIE);
+the sidecar's database Secret refs, app secrets from envFrom -env,
+RELEASE_COOKIE from /app/releases/COOKIE);
 GET /v0/configuration returns client_secret verbatim; PID via /proc scan
 for beam.smp.
 """

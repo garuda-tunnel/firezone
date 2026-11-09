@@ -2,11 +2,11 @@ locals {
   effective_mtu = var.mtu_policy.site_mtu != null ? var.mtu_policy.site_mtu : var.mtu_policy.effective_mtu
   # policy_fixed_mss: base MSS from the policy before applying the Firezone inner cap.
   # In site mode: site_mtu - 40. In explicit mode: the caller-supplied fixed_mss.
-  policy_fixed_mss  = var.mtu_policy.site_mtu != null ? var.mtu_policy.site_mtu - 40 : var.mtu_policy.fixed_mss
+  policy_fixed_mss = var.mtu_policy.site_mtu != null ? var.mtu_policy.site_mtu - 40 : var.mtu_policy.fixed_mss
   # fixed_mss: cap policy_fixed_mss to firezone_client_mtu - 40. Firezone manages
   # wg-firezone at a fixed MTU (default 1280) that Garuda cannot change, so the
   # inbound MSS clamp must not exceed that interface's capacity.
-  fixed_mss         = min(local.policy_fixed_mss, var.firezone_client_mtu - 40)
+  fixed_mss = min(local.policy_fixed_mss, var.firezone_client_mtu - 40)
   # mss_clamp_enabled defaults to true via optional(bool, true) in the policy type.
   mss_clamp_enabled = var.mtu_policy.mss_clamp_enabled
 
@@ -19,12 +19,10 @@ locals {
     transit_provider   = var.ospf.transit_provider
   }
 
-  # External images (postgres, oidcReconcile) are always present so the chart
-  # default can still be overridden by the module. First-party images (firezone,
-  # frr) are conditionally omitted when empty so the chart's pinned digest wins.
+  # OIDC reconcile always has an image override; omit an empty Firezone image
+  # so the chart's release-version default wins.
   images_override = merge(
     {
-      postgres      = var.postgres_image
       oidcReconcile = var.oidc_reconcile_image
     },
     var.firezone_image == "" ? {} : { firezone = var.firezone_image },
@@ -37,7 +35,6 @@ locals {
     cookieSigningSalt     = coalesce(try(var.encryption_secrets.cookieSigningSalt, null), random_bytes.cookie_signing_salt.base64)
     cookieEncryptionSalt  = coalesce(try(var.encryption_secrets.cookieEncryptionSalt, null), random_bytes.cookie_encryption_salt.base64)
     databaseEncryptionKey = coalesce(try(var.encryption_secrets.databaseEncryptionKey, null), random_bytes.database_encryption_key.base64)
-    databasePassword      = coalesce(try(var.encryption_secrets.databasePassword, null), random_bytes.database_password.base64)
     wireguardPrivateKey   = var.wireguard_private_key
   }
 }
@@ -53,7 +50,6 @@ resource "random_bytes" "live_view_signing_salt" { length = 24 }
 resource "random_bytes" "cookie_signing_salt" { length = 6 }
 resource "random_bytes" "cookie_encryption_salt" { length = 6 }
 resource "random_bytes" "database_encryption_key" { length = 32 }
-resource "random_bytes" "database_password" { length = 12 }
 
 resource "kubernetes_config_map" "garuda_extra" {
   for_each = var.configmaps
@@ -61,7 +57,7 @@ resource "kubernetes_config_map" "garuda_extra" {
     name      = each.key
     namespace = var.namespace
   }
-  data = each.value   # { filename => content } per Decision #11
+  data = each.value # { filename => content } per Decision #11
 }
 
 resource "helm_release" "firezone" {
@@ -84,7 +80,7 @@ resource "helm_release" "firezone" {
     yamlencode({
       namespace               = var.namespace
       name                    = var.name
-      firezoneDir             = var.firezone_dir
+      databaseSecretName      = var.database_secret_name
       serverFqdn              = var.server_fqdn
       clientSubnet            = var.client_subnet
       wireguardIpv4Address    = cidrhost(var.client_subnet, 1)
@@ -97,9 +93,9 @@ resource "helm_release" "firezone" {
       }
       nicAttach      = var.nic_attach
       labels         = var.labels
-      podLabels      = var.labels      # same map feeds both labels and podLabels (not a typo — vanilla-guest contract)
+      podLabels      = var.labels # same map feeds both labels and podLabels (not a typo — vanilla-guest contract)
       podAnnotations = var.annotations
-      images    = local.images_override
+      images         = local.images_override
       oidc = {
         managed   = var.oidc_managed
         providers = var.oidc_providers
