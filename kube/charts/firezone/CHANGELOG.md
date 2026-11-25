@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/garuda-tunnel/firezone-internal/compare/v3.0.0...v4.0.0) (2026-11-25)
+
+
+### ⚠ BREAKING CHANGES
+
+* **kube:** requires Stakater Reloader in the target namespace (garuda_k8s from garuda >= 0.25.0); secrets move to Secret <name>-credentials, <name>-env becomes a ConfigMap, and chart values adminPassword, secrets and oidc.providers are removed; the first plan after upgrading still prints the old metadata.values.
+
+### Bug Fixes
+
+* **kube:** keep Firezone secrets out of Helm values ([#65](https://github.com/garuda-tunnel/firezone-internal/issues/65)) ([a5cedb0](https://github.com/garuda-tunnel/firezone-internal/commit/a5cedb0cfc256b76eddfe4a311140d541e38a527)), closes [#60](https://github.com/garuda-tunnel/firezone-internal/issues/60)
+
 ## [3.0.0](https://github.com/garuda-tunnel/firezone-internal/compare/v2.0.1...v3.0.0) (2026-11-09)
 
 
