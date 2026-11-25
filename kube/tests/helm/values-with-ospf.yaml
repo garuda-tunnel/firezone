@@ -17,15 +17,8 @@ labels: {}
 images:
   firezone: ghcr.io/garuda-tunnel/garuda-firezone:latest
 adminEmail: admin@example.net
-adminPassword: fixture-password
-secrets:
-  guardianSecretKey: fixture-guardian
-  secretKeyBase: fixture-secret-key-base
-  liveViewSigningSalt: fixture-live-view
-  cookieSigningSalt: fixture-sign
-  cookieEncryptionSalt: fixture-encrypt
-  databaseEncryptionKey: fixture-database-encryption
-  wireguardPrivateKey: cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo=
+# The Terraform module always passes this (kube/main.tf); no chart default.
+credentialsSecretName: firezone-credentials
 ospf:
   router_id: 198.51.100.22
   interfaces:

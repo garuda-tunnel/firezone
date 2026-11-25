@@ -27,15 +27,15 @@ run "generated_path_includes_all_secret_keys" {
   assert {
     condition = alltrue([
       for key in [
-        "guardianSecretKey",
-        "secretKeyBase",
-        "liveViewSigningSalt",
-        "cookieSigningSalt",
-        "cookieEncryptionSalt",
-        "databaseEncryptionKey",
-      ] : contains(keys(yamldecode(helm_release.firezone.values[0]).secrets), key)
+        "GUARDIAN_SECRET_KEY",
+        "SECRET_KEY_BASE",
+        "LIVE_VIEW_SIGNING_SALT",
+        "COOKIE_SIGNING_SALT",
+        "COOKIE_ENCRYPTION_SALT",
+        "DATABASE_ENCRYPTION_KEY",
+      ] : contains(keys(kubernetes_secret_v1.credentials.data), key)
     ])
-    error_message = "generated values must include all Firezone encryption secret keys"
+    error_message = "the credentials Secret must include all Firezone encryption secret keys"
   }
 }
 
@@ -54,12 +54,12 @@ run "full_override_propagates_literal_values" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.firezone.values[0]).secrets.guardianSecretKey == "RESTORED-guardianSecretKey"
+    condition     = kubernetes_secret_v1.credentials.data["GUARDIAN_SECRET_KEY"] == "RESTORED-guardianSecretKey"
     error_message = "guardianSecretKey must use the override value"
   }
 
   assert {
-    condition     = yamldecode(helm_release.firezone.values[0]).secrets.databaseEncryptionKey == "RESTORED-databaseEncryptionKey"
+    condition     = kubernetes_secret_v1.credentials.data["DATABASE_ENCRYPTION_KEY"] == "RESTORED-databaseEncryptionKey"
     error_message = "databaseEncryptionKey must use the override value"
   }
 
@@ -75,20 +75,20 @@ run "partial_override_only_restores_supplied_values" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.firezone.values[0]).secrets.databaseEncryptionKey == "RESTORED-databaseEncryptionKey"
+    condition     = kubernetes_secret_v1.credentials.data["DATABASE_ENCRYPTION_KEY"] == "RESTORED-databaseEncryptionKey"
     error_message = "databaseEncryptionKey must use the partial override value"
   }
 
   assert {
     condition = alltrue([
       for key in [
-        "guardianSecretKey",
-        "secretKeyBase",
-        "liveViewSigningSalt",
-        "cookieSigningSalt",
-        "cookieEncryptionSalt",
-      ] : !strcontains(yamldecode(helm_release.firezone.values[0]).secrets[key], "RESTORED")
+        "GUARDIAN_SECRET_KEY",
+        "SECRET_KEY_BASE",
+        "LIVE_VIEW_SIGNING_SALT",
+        "COOKIE_SIGNING_SALT",
+        "COOKIE_ENCRYPTION_SALT",
+      ] : !strcontains(kubernetes_secret_v1.credentials.data[key], "RESTORED")
     ])
-    error_message = "unsupplied encryption_secrets fields must not contain the RESTORED marker"
+    error_message = "unsupplied encryption secret keys must not contain the RESTORED marker"
   }
 }

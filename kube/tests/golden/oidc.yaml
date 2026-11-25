@@ -1,26 +1,7 @@
 ---
-# Source: firezone/templates/oidc-secret.yaml
+# Source: firezone/templates/configmap-env.yaml
 apiVersion: v1
-kind: Secret
-metadata:
-  name: firezone-oidc
-  namespace: "garuda"
-  labels:
-    app.kubernetes.io/name: firezone
-    app.kubernetes.io/instance: "firezone"
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/part-of: garuda
-    garuda.managed-by: helm
-type: Opaque
-stringData:
-  # Full provider map (client_id, client_secret, metadata) as one JSON
-  # object. The reconcile script does a single json.loads.
-  OIDC_PROVIDERS_JSON: "{\"google\":{\"client_id\":\"fixture-client-id\",\"client_secret\":\"fixture-client-secret\",\"label\":\"Google\"}}"
-
----
-# Source: firezone/templates/secret.yaml
-apiVersion: v1
-kind: Secret
+kind: ConfigMap
 metadata:
   name: firezone-env
   namespace: "garuda"
@@ -30,13 +11,13 @@ metadata:
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/part-of: garuda
     garuda.managed-by: helm
-type: Opaque
-stringData:
-  # Firezone Phoenix application env. This Secret is the source of truth for the firezone
-  # container's environment (rendered directly from Helm values).
+data:
+  # Non-secret Firezone Phoenix application env. Secret material (admin
+  # password, encryption keys, WireGuard key, OIDC providers) lives in the
+  # Terraform-owned Secret named by credentialsSecretName, never in values:
+  # the helm provider prints the deployed release values unredacted in plans.
   EXTERNAL_URL: "https://hub.example.net"
   DEFAULT_ADMIN_EMAIL: "admin@example.net"
-  DEFAULT_ADMIN_PASSWORD: "fixture-password"
   WIREGUARD_IPV4_NETWORK: "198.51.100.128/25"
   WIREGUARD_IPV4_ADDRESS: "198.51.100.129"
   FZ_PORT: "13000"
@@ -46,15 +27,8 @@ stringData:
   MAX_DEVICES_PER_USER: "100"
   WIREGUARD_IPV4_MASQUERADE: "false"
   WIREGUARD_IPV6_MASQUERADE: "false"
-  GUARDIAN_SECRET_KEY: "fixture-guardian"
-  SECRET_KEY_BASE: "fixture-secret-key-base"
-  LIVE_VIEW_SIGNING_SALT: "fixture-live-view"
-  COOKIE_SIGNING_SALT: "fixture-sign"
-  COOKIE_ENCRYPTION_SALT: "fixture-encrypt"
-  DATABASE_ENCRYPTION_KEY: "fixture-database-encryption"
   # WireGuard server key: Firezone reads it from the file the wg-key volume
-  # projects out of this Secret (see deployment.yaml).
-  WIREGUARD_PRIVATE_KEY: "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo="
+  # projects out of the credentials Secret (see deployment.yaml).
   WIREGUARD_PRIVATE_KEY_PATH: "/etc/firezone/wg/private_key"
 
 ---
@@ -83,7 +57,8 @@ data:
     
     Spike-confirmed (docs/artifacts/2026-06-02-firezone-oidc-spike.md):
     nsenter --mount --net; create-api-token uses eval (DB env inherited from
-    the sidecar's database Secret refs, app secrets from envFrom -env,
+    the sidecar's database Secret refs, app secrets from the credentials
+    Secret envFrom,
     RELEASE_COOKIE from /app/releases/COOKIE);
     GET /v0/configuration returns client_secret verbatim; PID via /proc scan
     for beam.smp.
@@ -108,7 +83,7 @@ data:
     API_URL = os.environ.get("FZ_API_URL", "http://127.0.0.1:13000")
     RELEASE_DIR = os.environ.get("FZ_RELEASE_DIR", "/app")
     MANAGED = os.environ.get("OIDC_MANAGED", "merge")
-    SERVER_URL = os.environ.get("EXTERNAL_URL", "")  # from -env secret
+    SERVER_URL = os.environ.get("EXTERNAL_URL", "")  # from the <name>-env ConfigMap
     READY_TIMEOUT = int(os.environ.get("FZ_READY_TIMEOUT", "300"))
     OK_FILE = "/tmp/oidc-reconcile-ok"
     
@@ -338,6 +313,11 @@ kind: Deployment
 metadata:
   name: "firezone"
   namespace: "garuda"
+  annotations:
+    # Stakater Reloader (namespace-scoped, from modules/garuda_k8s) watches the
+    # Terraform-owned credentials Secret and rolls this Deployment when its
+    # keys change; the release itself does not change.
+    secret.reloader.stakater.com/reload: "firezone-credentials"
   labels:
     app.kubernetes.io/name: firezone
     app.kubernetes.io/instance: "firezone"
@@ -364,9 +344,8 @@ spec:
         garuda.managed-by: helm
         net.garuda-tunnel/profile: oidc-guest
       annotations:
-        checksum/env-secret: 07b9e02d3b32216bcf78775fc8012bfc2ab6582417e7c6f781d3c7c1ac6a8250
-        checksum/oidc-secret: df06c5771bfee8f263765a4ba98491e51bf02916a272368268bc857f3aa895b8
-        checksum/oidc-reconcile: b0c0bad70b4113db7d715b9aa2e852544e15565f941a793031617a426d017c37
+        checksum/env: cd8285fb4cf6177c7ab85140c2eb4338b74d2c1d9bf6585c1a1cd829f5f05d21
+        checksum/oidc-reconcile: d35b6591eec3a05f90852aafac6dcffe9d1a9f9648d56b414dcc7c9f891d910c
         net.garuda-tunnel/router-id: 198.51.100.22
     spec:
       restartPolicy: Always
@@ -387,14 +366,14 @@ spec:
             value: "2"
       volumes:
         # Disposable Phoenix state only (SAML self-signed cert, telemetry id).
-        # The WireGuard server key lives in the env Secret, not here.
+        # The WireGuard server key lives in the credentials Secret, not here.
         - name: firezone-data
           emptyDir: {}
         # Required (no `optional`): a missing key keeps the pod from starting
         # instead of Firezone generating a replacement.
         - name: wg-key
           secret:
-            secretName: firezone-env
+            secretName: firezone-credentials
             items:
               - key: WIREGUARD_PRIVATE_KEY
                 path: private_key
@@ -435,8 +414,14 @@ spec:
                   name: "postgres-app"
                   key: "password"
           envFrom:
-            - secretRef:
+            # Non-secret app env from the <name>-env ConfigMap; secret material
+            # (admin password, encryption keys, WIREGUARD_PRIVATE_KEY) from the
+            # Terraform-owned credentials Secret, listed last so its keys win
+            # any name collision.
+            - configMapRef:
                 name: firezone-env
+            - secretRef:
+                name: firezone-credentials
           ports:
             # Internal admin/Phoenix port. Backed by the ClusterIP
             # Service consumed by the Traefik IngressRoute.
@@ -504,14 +489,16 @@ spec:
               value: "http://127.0.0.1:13000"
             - name: FZ_RELEASE_DIR
               value: "/app"
-          # firezone-env is REQUIRED, not over-broad: the nsenter-launched
-          # bin/create-api-token (eval mode) inherits this env and needs
-          # application secrets as well as the connection env above to reach Postgres.
+          # Both sources are REQUIRED, not over-broad: the nsenter-launched
+          # bin/create-api-token (eval mode) inherits this env and needs the
+          # application secrets from the credentials Secret (including
+          # OIDC_PROVIDERS_JSON) as well as the connection env above to reach
+          # Postgres.
           envFrom:
-            - secretRef:
+            - configMapRef:
                 name: firezone-env
             - secretRef:
-                name: firezone-oidc
+                name: firezone-credentials
           securityContext:
             runAsUser: 0
             capabilities:

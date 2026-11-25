@@ -47,29 +47,24 @@ images:
 # Required: consumer module supplies via var.admin_email. Empty default
 # fails fast.
 adminEmail: ""
-# Required: consumer module supplies via var.admin_password. Empty
-# default fails fast.
-adminPassword: ""
-secrets:
-  guardianSecretKey: "placeholder_guardian"
-  secretKeyBase: "placeholder_secret"
-  liveViewSigningSalt: "placeholder_liveview"
-  cookieSigningSalt: "placeholder_cookiesigning"
-  cookieEncryptionSalt: "placeholder_cookieencryption"
-  databaseEncryptionKey: "placeholder_dbencryption"
-  # Required: WireGuard server private key, supplied by the consumer module. Must be
-  # clamped (`wg genkey` output): Firezone advertises a public key derived without
-  # clamping, so an unclamped key breaks every client config. The schema enforces it.
-  wireguardPrivateKey: ""
+# Required: name of the Terraform-owned Secret (kube/main.tf
+# kubernetes_secret_v1.credentials) carrying DEFAULT_ADMIN_PASSWORD, the six
+# application encryption secrets, WIREGUARD_PRIVATE_KEY and (when OIDC is on)
+# OIDC_PROVIDERS_JSON. No default: the name must come from the module, never
+# from the chart, or the Deployment would reference a Secret nobody owns.
+credentialsSecretName: ""
 # ospf: null — kept for back-compat; ignored by chart (FRR sidecar removed
 # in Phase 4+5 Decision #5; Garuda injects routing via annotation layer).
 ospf: null
-# OIDC reconcile. When oidc.providers is empty, no sidecar / Secret /
-# shareProcessNamespace is rendered (OIDC off). When non-empty, the
-# oidc-reconcile sidecar reconciles providers onto the running instance.
+# OIDC reconcile. The module derives enabled from whether OIDC providers are
+# configured (nonsensitive(length(var.oidc_providers) > 0)); the providers
+# themselves travel in the credentials Secret as OIDC_PROVIDERS_JSON. When
+# enabled is false, no sidecar / ConfigMap / shareProcessNamespace is
+# rendered (OIDC off). When true, the oidc-reconcile sidecar reconciles
+# providers onto the running instance.
 oidc:
   managed: merge
-  providers: {}
+  enabled: false
 # MTU policy values — supplied by the consumer Terraform module.
 # The mss-clamp sidecar, readiness probe, and outbound oifname route-PMTU rule
 # are ALWAYS rendered. mssClampEnabled gates only the inbound iifname fixed-MSS

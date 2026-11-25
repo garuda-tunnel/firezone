@@ -22,23 +22,14 @@ images:
   firezone: ghcr.io/garuda-tunnel/garuda-firezone:latest
   oidcReconcile: python:3.12-slim-bookworm
 adminEmail: admin@example.net
-adminPassword: fixture-password
-secrets:
-  guardianSecretKey: fixture-guardian
-  secretKeyBase: fixture-secret-key-base
-  liveViewSigningSalt: fixture-live-view
-  cookieSigningSalt: fixture-sign
-  cookieEncryptionSalt: fixture-encrypt
-  databaseEncryptionKey: fixture-database-encryption
-  wireguardPrivateKey: cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo=
+# The Terraform module always passes this (kube/main.tf); no chart default.
+credentialsSecretName: firezone-credentials
 ospf: null
 oidc:
   managed: merge
-  providers:
-    google:
-      client_id: fixture-client-id
-      client_secret: fixture-client-secret
-      label: Google
+  # Providers travel in the credentials Secret as OIDC_PROVIDERS_JSON
+  # (written by kube/main.tf), never in chart values.
+  enabled: true
 mtuPolicy:
   mssClampEnabled: true
   fixedMss: 1240

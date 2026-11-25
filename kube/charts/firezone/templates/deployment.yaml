@@ -3,6 +3,11 @@ kind: Deployment
 metadata:
   name: {{ .Values.name | quote }}
   namespace: {{ .Values.namespace | quote }}
+  annotations:
+    # Stakater Reloader (namespace-scoped, from modules/garuda_k8s) watches the
+    # Terraform-owned credentials Secret and rolls this Deployment when its
+    # keys change; the release itself does not change.
+    secret.reloader.stakater.com/reload: {{ .Values.credentialsSecretName | quote }}
   labels:
     {{- include "firezone.labels" . | nindent 4 }}
 spec:
@@ -22,9 +27,8 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        checksum/env-secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
-        {{- if .Values.oidc.providers }}
-        checksum/oidc-secret: {{ include (print $.Template.BasePath "/oidc-secret.yaml") . | sha256sum }}
+        checksum/env: {{ include (print $.Template.BasePath "/configmap-env.yaml") . | sha256sum }}
+        {{- if .Values.oidc.enabled }}
         checksum/oidc-reconcile: {{ include (print $.Template.BasePath "/oidc-reconcile-configmap.yaml") . | sha256sum }}
         {{- end }}
         {{- with .Values.podAnnotations }}
@@ -32,7 +36,7 @@ spec:
         {{- end }}
     spec:
       restartPolicy: Always
-      {{- if .Values.oidc.providers }}
+      {{- if .Values.oidc.enabled }}
       shareProcessNamespace: true
       {{- end }}
       # Match the existing docker-compose stack's sysctls. All three are
@@ -51,19 +55,19 @@ spec:
             value: "2"
       volumes:
         # Disposable Phoenix state only (SAML self-signed cert, telemetry id).
-        # The WireGuard server key lives in the env Secret, not here.
+        # The WireGuard server key lives in the credentials Secret, not here.
         - name: firezone-data
           emptyDir: {}
         # Required (no `optional`): a missing key keeps the pod from starting
         # instead of Firezone generating a replacement.
         - name: wg-key
           secret:
-            secretName: {{ .Values.name }}-env
+            secretName: {{ .Values.credentialsSecretName }}
             items:
               - key: WIREGUARD_PRIVATE_KEY
                 path: private_key
             defaultMode: 0400
-        {{- if .Values.oidc.providers }}
+        {{- if .Values.oidc.enabled }}
         - name: oidc-reconcile-script
           configMap:
             name: {{ .Values.name }}-oidc-reconcile
@@ -77,8 +81,14 @@ spec:
           env:
             {{- include "firezone.databaseEnv" . | trim | nindent 12 }}
           envFrom:
-            - secretRef:
+            # Non-secret app env from the <name>-env ConfigMap; secret material
+            # (admin password, encryption keys, WIREGUARD_PRIVATE_KEY) from the
+            # Terraform-owned credentials Secret, listed last so its keys win
+            # any name collision.
+            - configMapRef:
                 name: {{ .Values.name }}-env
+            - secretRef:
+                name: {{ .Values.credentialsSecretName }}
           ports:
             # Internal admin/Phoenix port. Backed by the ClusterIP
             # Service consumed by the Traefik IngressRoute.
@@ -110,7 +120,7 @@ spec:
           securityContext:
             capabilities:
               add: ["NET_ADMIN", "SYS_MODULE"]
-        {{- if .Values.oidc.providers }}
+        {{- if .Values.oidc.enabled }}
         - name: oidc-reconcile
           image: {{ .Values.images.oidcReconcile | quote }}
           imagePullPolicy: IfNotPresent
@@ -123,14 +133,16 @@ spec:
               value: "http://127.0.0.1:13000"
             - name: FZ_RELEASE_DIR
               value: "/app"
-          # firezone-env is REQUIRED, not over-broad: the nsenter-launched
-          # bin/create-api-token (eval mode) inherits this env and needs
-          # application secrets as well as the connection env above to reach Postgres.
+          # Both sources are REQUIRED, not over-broad: the nsenter-launched
+          # bin/create-api-token (eval mode) inherits this env and needs the
+          # application secrets from the credentials Secret (including
+          # OIDC_PROVIDERS_JSON) as well as the connection env above to reach
+          # Postgres.
           envFrom:
-            - secretRef:
+            - configMapRef:
                 name: {{ .Values.name }}-env
             - secretRef:
-                name: {{ .Values.name }}-oidc
+                name: {{ .Values.credentialsSecretName }}
           securityContext:
             runAsUser: 0
             capabilities:

@@ -9,7 +9,8 @@ Deployment does not restart-loop it. Re-runs on every pod recreation.
 
 Spike-confirmed (docs/artifacts/2026-06-02-firezone-oidc-spike.md):
 nsenter --mount --net; create-api-token uses eval (DB env inherited from
-the sidecar's database Secret refs, app secrets from envFrom -env,
+the sidecar's database Secret refs, app secrets from the credentials
+Secret envFrom,
 RELEASE_COOKIE from /app/releases/COOKIE);
 GET /v0/configuration returns client_secret verbatim; PID via /proc scan
 for beam.smp.
@@ -34,7 +35,7 @@ log = logging.getLogger("oidc-reconcile")
 API_URL = os.environ.get("FZ_API_URL", "http://127.0.0.1:13000")
 RELEASE_DIR = os.environ.get("FZ_RELEASE_DIR", "/app")
 MANAGED = os.environ.get("OIDC_MANAGED", "merge")
-SERVER_URL = os.environ.get("EXTERNAL_URL", "")  # from -env secret
+SERVER_URL = os.environ.get("EXTERNAL_URL", "")  # from the <name>-env ConfigMap
 READY_TIMEOUT = int(os.environ.get("FZ_READY_TIMEOUT", "300"))
 OK_FILE = "/tmp/oidc-reconcile-ok"
 

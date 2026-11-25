@@ -84,7 +84,7 @@ run "values_have_no_embedded_postgres" {
     condition = (
       !contains(keys(yamldecode(helm_release.firezone.values[0])), "firezoneDir") &&
       !contains(keys(yamldecode(helm_release.firezone.values[0]).images), "postgres") &&
-      !contains(keys(yamldecode(helm_release.firezone.values[0]).secrets), "databasePassword")
+      !strcontains(helm_release.firezone.values[0], "databasePassword")
     )
     error_message = "application values must not provision Postgres storage, image or password"
   }
@@ -157,8 +157,8 @@ run "values_include_firezone_secret_contract" {
   }
 
   assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"guardianSecretKey\":")
-    error_message = "rendered values must include GUARDIAN_SECRET_KEY material"
+    condition     = kubernetes_secret_v1.credentials.data["GUARDIAN_SECRET_KEY"] == "fixture-guardian"
+    error_message = "the credentials Secret must carry GUARDIAN_SECRET_KEY material"
   }
 }
 
@@ -230,6 +230,16 @@ run "reject_invalid_admin_email" {
   expect_failures = [var.admin_email]
 }
 
+run "reject_empty_admin_password" {
+  command = plan
+
+  variables {
+    admin_password = ""
+  }
+
+  expect_failures = [var.admin_password]
+}
+
 run "reject_invalid_client_subnet" {
   command = plan
 
@@ -272,8 +282,8 @@ run "oidc_disabled_by_default_renders_no_oidc_block" {
     error_message = "rendered values must always include an oidc key"
   }
   assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"providers\": {}")
-    error_message = "with default var.oidc_providers={}, rendered oidc.providers must be empty"
+    condition     = strcontains(helm_release.firezone.values[0], "\"enabled\": false")
+    error_message = "with default var.oidc_providers={}, rendered oidc.enabled must be false"
   }
   assert {
     condition     = strcontains(helm_release.firezone.values[0], "\"managed\": \"merge\"")
@@ -300,8 +310,8 @@ run "oidc_providers_propagate" {
     error_message = "rendered values must include images.oidcReconcile"
   }
   assert {
-    condition     = strcontains(helm_release.firezone.values[0], "\"client_id\": \"fixture-client-id\"")
-    error_message = "rendered values must include the provider client_id"
+    condition     = strcontains(helm_release.firezone.values[0], "\"enabled\": true")
+    error_message = "rendered values must switch oidc.enabled on when providers are set"
   }
 }
 
@@ -527,5 +537,107 @@ run "passthrough_annotations_labels_configmaps" {
   assert {
     condition     = length(kubernetes_config_map.garuda_extra) == 1 && contains(keys(kubernetes_config_map.garuda_extra), "firezone-frr-extra")
     error_message = "one ConfigMap must be planned per configmaps entry, keyed by CM name"
+  }
+}
+
+# The helm provider (>= 2.13) stores the deployed values unredacted in the
+# computed metadata.values that plans print whenever the release changes
+# (issue #60). Secret material must therefore travel in the Terraform-owned
+# credentials Secret, never through helm_release.values or set_sensitive
+# (the #63 approach, rejected in review).
+run "secrets_never_in_helm_values" {
+  command = plan
+
+  variables {
+    oidc_providers = {
+      google = {
+        client_id     = "fixture-client-id"
+        client_secret = "fixture-client-secret"
+      }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for secret in [
+        "fixture-password",
+        "fixture-guardian",
+        "fixture-secret-key-base",
+        "fixture-live-view",
+        "fixture-sign",
+        "fixture-encrypt",
+        "fixture-database-encryption",
+        "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo=",
+        "fixture-client-secret",
+      ] : alltrue([for doc in helm_release.firezone.values : !strcontains(doc, secret)])
+    ])
+    error_message = "no fixture secret (admin password, encryption keys, WireGuard key, OIDC client secret) may appear in any helm_release.values document"
+  }
+  assert {
+    condition = (
+      !contains(keys(yamldecode(helm_release.firezone.values[0])), "adminPassword") &&
+      !contains(keys(yamldecode(helm_release.firezone.values[0])), "secrets")
+    )
+    error_message = "values must not carry adminPassword or secrets keys"
+  }
+  assert {
+    condition     = keys(yamldecode(helm_release.firezone.values[0]).oidc) == ["enabled", "managed"]
+    error_message = "values.oidc must be exactly {managed, enabled}"
+  }
+  assert {
+    condition     = try(length(helm_release.firezone.set_sensitive), 0) == 0
+    error_message = "helm_release must not pass anything via set_sensitive"
+  }
+}
+
+run "oidc_json_in_secret" {
+  command = plan
+
+  variables {
+    oidc_providers = {
+      google = {
+        client_id     = "fixture-client-id"
+        client_secret = "fixture-client-secret"
+        label         = "Google"
+      }
+    }
+  }
+
+  assert {
+    condition     = jsondecode(kubernetes_secret_v1.credentials.data["OIDC_PROVIDERS_JSON"]).google.client_secret == "fixture-client-secret"
+    error_message = "the credentials Secret must carry the full provider map as OIDC_PROVIDERS_JSON"
+  }
+  assert {
+    condition     = yamldecode(helm_release.firezone.values[0]).oidc.enabled == true
+    error_message = "values.oidc.enabled must be true when providers are set"
+  }
+
+  # Unset optional attributes must reach the reconcile script as JSON null;
+  # oidc_reconcile.py:72-85 relies on .get(...) or default.
+  assert {
+    condition     = jsondecode(kubernetes_secret_v1.credentials.data["OIDC_PROVIDERS_JSON"]).google.scope == null
+    error_message = "an unset optional provider attribute must serialize as JSON null"
+  }
+}
+
+run "no_oidc_means_no_oidc_key" {
+  command = plan
+
+  assert {
+    condition     = !contains(keys(kubernetes_secret_v1.credentials.data), "OIDC_PROVIDERS_JSON")
+    error_message = "the credentials Secret must not carry an OIDC_PROVIDERS_JSON key when no providers are set"
+  }
+  assert {
+    condition     = yamldecode(helm_release.firezone.values[0]).oidc.enabled == false
+    error_message = "values.oidc.enabled must be false with the default empty provider map"
+  }
+}
+
+run "chart_gets_secret_name" {
+  command = plan
+
+  assert {
+    condition     = yamldecode(helm_release.firezone.values[0]).credentialsSecretName == "${var.name}-credentials"
+    error_message = "the rendered values must pass credentialsSecretName so envFrom, the wg-key volume and the reload annotation name the Terraform-owned Secret"
   }
 }

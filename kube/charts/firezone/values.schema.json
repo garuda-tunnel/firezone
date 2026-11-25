@@ -16,14 +16,14 @@
     "nicAttach",
     "images",
     "adminEmail",
-    "adminPassword",
-    "secrets",
+    "credentialsSecretName",
     "oidc",
     "mtuPolicy"
   ],
   "properties": {
     "namespace":        { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
     "name":             { "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" },
+    "credentialsSecretName": { "type": "string", "minLength": 1 },
     "databaseSecretName": { "type": "string", "minLength": 1, "maxLength": 253, "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?)*$" },
     "serverFqdn":       { "type": "string", "minLength": 1 },
     "clientSubnet":     { "type": "string", "minLength": 1 },
@@ -64,29 +64,6 @@
       }
     },
     "adminEmail":    { "type": "string", "minLength": 1 },
-    "adminPassword": { "type": "string", "minLength": 1 },
-    "secrets": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "guardianSecretKey",
-        "secretKeyBase",
-        "liveViewSigningSalt",
-        "cookieSigningSalt",
-        "cookieEncryptionSalt",
-        "databaseEncryptionKey",
-        "wireguardPrivateKey"
-      ],
-      "properties": {
-        "guardianSecretKey":     { "type": "string", "minLength": 1 },
-        "secretKeyBase":         { "type": "string", "minLength": 1 },
-        "liveViewSigningSalt":   { "type": "string", "minLength": 1 },
-        "cookieSigningSalt":     { "type": "string", "minLength": 1 },
-        "cookieEncryptionSalt":  { "type": "string", "minLength": 1 },
-        "databaseEncryptionKey": { "type": "string", "minLength": 1 },
-        "wireguardPrivateKey":   { "type": "string", "pattern": "^[ACEGIKMOQSUWYacegikmoqsuwy02468+][A-P][A-Za-z0-9+/]{39}[E-HU-Xk-n0-3][AEIMQUYcgkosw480]=$" }
-      }
-    },
     "ospf": {
       "type": ["object", "null"],
       "additionalProperties": false,
@@ -104,9 +81,9 @@
       "type": "object",
       "properties": {
         "managed":   { "type": "string", "enum": ["merge", "replace"] },
-        "providers": { "type": "object" }
+        "enabled":   { "type": "boolean" }
       },
-      "required": ["managed", "providers"],
+      "required": ["managed", "enabled"],
       "additionalProperties": false
     },
     "mtuPolicy": {

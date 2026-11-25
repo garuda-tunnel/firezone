@@ -1,17 +1,17 @@
 apiVersion: v1
-kind: Secret
+kind: ConfigMap
 metadata:
   name: {{ .Values.name }}-env
   namespace: {{ .Values.namespace | quote }}
   labels:
     {{- include "firezone.labels" . | nindent 4 }}
-type: Opaque
-stringData:
-  # Firezone Phoenix application env. This Secret is the source of truth for the firezone
-  # container's environment (rendered directly from Helm values).
+data:
+  # Non-secret Firezone Phoenix application env. Secret material (admin
+  # password, encryption keys, WireGuard key, OIDC providers) lives in the
+  # Terraform-owned Secret named by credentialsSecretName, never in values:
+  # the helm provider prints the deployed release values unredacted in plans.
   EXTERNAL_URL: {{ printf "https://%s" .Values.serverFqdn | quote }}
   DEFAULT_ADMIN_EMAIL: {{ .Values.adminEmail | quote }}
-  DEFAULT_ADMIN_PASSWORD: {{ .Values.adminPassword | quote }}
   WIREGUARD_IPV4_NETWORK: {{ .Values.clientSubnet | quote }}
   WIREGUARD_IPV4_ADDRESS: {{ .Values.wireguardIpv4Address | quote }}
   FZ_PORT: "13000"
@@ -21,13 +21,6 @@ stringData:
   MAX_DEVICES_PER_USER: {{ .Values.maxDevicesPerUser | quote }}
   WIREGUARD_IPV4_MASQUERADE: {{ .Values.wireguardIpv4Masquerade | quote }}
   WIREGUARD_IPV6_MASQUERADE: {{ .Values.wireguardIpv6Masquerade | quote }}
-  GUARDIAN_SECRET_KEY: {{ .Values.secrets.guardianSecretKey | quote }}
-  SECRET_KEY_BASE: {{ .Values.secrets.secretKeyBase | quote }}
-  LIVE_VIEW_SIGNING_SALT: {{ .Values.secrets.liveViewSigningSalt | quote }}
-  COOKIE_SIGNING_SALT: {{ .Values.secrets.cookieSigningSalt | quote }}
-  COOKIE_ENCRYPTION_SALT: {{ .Values.secrets.cookieEncryptionSalt | quote }}
-  DATABASE_ENCRYPTION_KEY: {{ .Values.secrets.databaseEncryptionKey | quote }}
   # WireGuard server key: Firezone reads it from the file the wg-key volume
-  # projects out of this Secret (see deployment.yaml).
-  WIREGUARD_PRIVATE_KEY: {{ .Values.secrets.wireguardPrivateKey | quote }}
+  # projects out of the credentials Secret (see deployment.yaml).
   WIREGUARD_PRIVATE_KEY_PATH: "/etc/firezone/wg/private_key"

@@ -37,6 +37,11 @@ locals {
     databaseEncryptionKey = coalesce(try(var.encryption_secrets.databaseEncryptionKey, null), random_bytes.database_encryption_key.base64)
     wireguardPrivateKey   = var.wireguard_private_key
   }
+
+  # var.oidc_providers is sensitive; unwrap the emptiness check so the
+  # rendered values stay non-sensitive (a sensitive value here would mark the
+  # whole helm_release.values document sensitive).
+  oidc_enabled = nonsensitive(length(var.oidc_providers) > 0)
 }
 
 # Derives the public key only; the private key is an input, never generated here.
@@ -60,6 +65,35 @@ resource "kubernetes_config_map" "garuda_extra" {
   data = each.value # { filename => content } per Decision #11
 }
 
+# Terraform-owned credentials Secret (issue #60): the helm provider stores the
+# deployed values unredacted in the computed metadata.values that plans print
+# whenever the release changes, so secret material travels here, never through
+# helm_release.values or set_sensitive. Stakater Reloader (modules/garuda_k8s)
+# watches this Secret via the Deployment's secret.reloader.stakater.com/reload
+# annotation and rolls the pod when a key changes.
+resource "kubernetes_secret_v1" "credentials" {
+  metadata {
+    name      = "${var.name}-credentials"
+    namespace = var.namespace
+  }
+  type = "Opaque"
+  data = merge(
+    {
+      DEFAULT_ADMIN_PASSWORD  = var.admin_password
+      GUARDIAN_SECRET_KEY     = local.firezone_secrets.guardianSecretKey
+      SECRET_KEY_BASE         = local.firezone_secrets.secretKeyBase
+      LIVE_VIEW_SIGNING_SALT  = local.firezone_secrets.liveViewSigningSalt
+      COOKIE_SIGNING_SALT     = local.firezone_secrets.cookieSigningSalt
+      COOKIE_ENCRYPTION_SALT  = local.firezone_secrets.cookieEncryptionSalt
+      DATABASE_ENCRYPTION_KEY = local.firezone_secrets.databaseEncryptionKey
+      WIREGUARD_PRIVATE_KEY   = local.firezone_secrets.wireguardPrivateKey
+    },
+    # Same JSON shape the chart's oidc-secret.yaml produced with toJson; the
+    # reconcile sidecar does a single json.loads.
+    local.oidc_enabled ? { OIDC_PROVIDERS_JSON = jsonencode(var.oidc_providers) } : {},
+  )
+}
+
 resource "helm_release" "firezone" {
   name             = var.name
   namespace        = var.namespace
@@ -78,8 +112,10 @@ resource "helm_release" "firezone" {
 
   values = [
     yamlencode({
-      namespace               = var.namespace
-      name                    = var.name
+      namespace = var.namespace
+      name      = var.name
+      # This reference (not a literal) orders the credentials Secret before the Helm upgrade.
+      credentialsSecretName   = kubernetes_secret_v1.credentials.metadata[0].name
       databaseSecretName      = var.database_secret_name
       serverFqdn              = var.server_fqdn
       clientSubnet            = var.client_subnet
@@ -97,13 +133,11 @@ resource "helm_release" "firezone" {
       podAnnotations = var.annotations
       images         = local.images_override
       oidc = {
-        managed   = var.oidc_managed
-        providers = var.oidc_providers
+        managed = var.oidc_managed
+        enabled = local.oidc_enabled
       }
-      adminEmail    = var.admin_email
-      adminPassword = var.admin_password
-      secrets       = local.firezone_secrets
-      ospf          = local.ospf_values
+      adminEmail = var.admin_email
+      ospf       = local.ospf_values
       mtuPolicy = {
         fixedMss        = local.fixed_mss
         mssClampEnabled = local.mss_clamp_enabled

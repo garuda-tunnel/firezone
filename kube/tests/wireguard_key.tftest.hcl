@@ -30,8 +30,8 @@ run "donor_key_derives_public_key" {
   }
 
   assert {
-    condition     = yamldecode(helm_release.firezone.values[0]).secrets.wireguardPrivateKey == "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo="
-    error_message = "chart values must carry the supplied private key unchanged"
+    condition     = kubernetes_secret_v1.credentials.data["WIREGUARD_PRIVATE_KEY"] == "cAdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LGo="
+    error_message = "the credentials Secret must carry the supplied private key unchanged"
   }
 }
 

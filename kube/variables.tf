@@ -89,6 +89,12 @@ variable "admin_password" {
   description = "Initial admin password (DEFAULT_ADMIN_PASSWORD)."
   type        = string
   sensitive   = true
+  nullable    = false
+
+  validation {
+    condition     = length(var.admin_password) > 0
+    error_message = "admin_password must be non-empty."
+  }
 }
 
 variable "encryption_secrets" {
@@ -99,7 +105,7 @@ persisted in terraform state. Provide via tfvars when restoring a
 database whose rows were encrypted with prior keys.
 
 Typical recovery flow:
-    kubectl get secret <name>-env -n <ns> -o json \
+    kubectl get secret <name>-credentials -n <ns> -o json \
       | jq '.data | map_values(@base64d)'
 Place the resulting map under `encryption_secrets:` in
 secrets.sops.yaml of the consuming stand.
@@ -233,7 +239,8 @@ variable "oidc_providers" {
   description = <<-EOT
 Map of OIDC provider_key -> provider config reconciled onto the running
 Firezone instance via the in-pod reconcile sidecar. Empty map disables OIDC
-entirely (no sidecar, no shareProcessNamespace, no oidc Secret).
+entirely: no sidecar, no shareProcessNamespace, and no
+OIDC_PROVIDERS_JSON key in the credentials Secret.
 EOT
   type = map(object({
     client_id              = string

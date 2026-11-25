@@ -35,8 +35,8 @@ The same checks run in CI (`image-compat` job) against every pushed dev image.
 Deploys the Firezone application stack as one multi-container Kubernetes
 Deployment using an external PostgreSQL database. The chart does not provision
 database containers or storage. The WireGuard server key is a required
-input, shipped to the pod in the env Secret and mounted read-only as a
-file.
+input, shipped in the Terraform-owned credentials Secret and mounted
+read-only as a file.
 
 Admin UI is exposed via a Gateway API `HTTPRoute` that attaches to the
 parent `Gateway` supplied via `gateway_ref` (typically managed by the
@@ -129,6 +129,45 @@ module "firezone_kube" {
   }
 }
 ```
+
+## Migrating from 3.x to 4.x
+
+This is a breaking upgrade: Firezone's secret material leaves Helm values
+entirely (issue #60 — the helm provider stores the deployed values unredacted
+in the computed `metadata.values` that plans print). The chart values
+`adminPassword`, `secrets.*` and `oidc.providers` are removed; the module now
+writes `DEFAULT_ADMIN_PASSWORD`, the six application encryption secrets
+(`GUARDIAN_SECRET_KEY`, `SECRET_KEY_BASE`, `LIVE_VIEW_SIGNING_SALT`,
+`COOKIE_SIGNING_SALT`, `COOKIE_ENCRYPTION_SALT`, `DATABASE_ENCRYPTION_KEY`),
+`WIREGUARD_PRIVATE_KEY` and, when OIDC providers are set,
+`OIDC_PROVIDERS_JSON` to the Terraform-owned Secret `<name>-credentials`.
+Module inputs and outputs are unchanged, and no secret value rotates: the
+`random_bytes` resources, `wireguard_asymmetric_key.server` and every
+sops-sourced input keep their names.
+
+- **Breaking:** the target namespace must run Stakater Reloader
+  (`modules/garuda_k8s` from garuda >= 0.25.0). The Deployment's
+  `secret.reloader.stakater.com/reload: <name>-credentials` annotation names
+  the Secret, so a secret change applied through `tofu apply` rolls the pod
+  without any change to the release.
+- The chart-owned `<name>-env` becomes a ConfigMap with the non-secret
+  application env. A different resource kind is a different Helm resource:
+  the upgrade creates the ConfigMap and deletes the old Secret — with the
+  secret keys a live 3.x release still carries — after patching the
+  Deployment. `<name>-oidc` is gone (providers travel in
+  `<name>-credentials`). Both the firezone container and the OIDC sidecar
+  take `envFrom` of `<name>-env` (ConfigMap) plus `<name>-credentials`, so
+  the firezone container now also receives `OIDC_PROVIDERS_JSON` through the
+  shared credentials Secret (before, only the reconcile sidecar did; the
+  application ignores it).
+- Upgrade caveat: the first plan after upgrading still prints the old
+  `metadata.values` (with every secret) from state; protect that plan and
+  rotate anything already printed in CI logs. Terraform state keeps the
+  secrets in plain text.
+
+For direct chart consumers: pass `credentialsSecretName` (the Terraform-owned
+Secret) and `oidc.enabled` instead of `adminPassword`, `secrets` and
+`oidc.providers`.
 
 ## Migrating from 2.x to 3.x
 
